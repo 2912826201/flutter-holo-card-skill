@@ -75,6 +75,22 @@ Codex 的默认位置通常是：
 
 Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`CustomPainter` 与 Runtime Shader。示例模板在 `skills/build-flutter-holo-card/assets/flutter`，资源处理脚本在 `skills/build-flutter-holo-card/scripts`。
 
+### 只生成资源图
+
+已经有自己的 Flutter 实现，只想让 Agent 把“闪卡食材”备好吗？可以明确启用仅资源模式：
+
+```text
+请使用 build-flutter-holo-card 的仅资源模式处理我提供的卡图。只生成并校准 background.png、foreground.png、character_contour.png、character_bloom.png 和 alignment-overlay.png，运行资源检查并报告结果。不要创建或修改任何 Flutter、Dart、Shader、页面、路由、测试或 pubspec 代码。
+```
+
+在 Codex 中也可以这样说：
+
+```text
+使用 $build-flutter-holo-card，只生成并校准全息卡所需资源图，不生成或修改代码。
+```
+
+`alignment-overlay.png` 用来检查轮廓是否贴合，不需要打包进 App；其余四张是运行时资源。
+
 ## 本地验证
 
 ```bash
