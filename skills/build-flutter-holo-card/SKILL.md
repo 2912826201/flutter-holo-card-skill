@@ -1,6 +1,6 @@
 ---
 name: build-flutter-holo-card
-description: Build and quality-gate interactive Flutter holographic or lenticular cards from one supplied raster card image using a repaired scenery plate, an original-pixel merged foreground, visible-only semantic contour glow, signed parallax, diagonal foil sweep, and touch-safe tilt. Use when Codex needs to generate aligned card assets, port the holo-card renderer into a Flutter runtime shader, add a reusable component and test page, or fix duplicated subjects, contour drift, grid-like foil, wrong sweep direction, weak small-angle response, or touch-down pitch jumps.
+description: Build and quality-gate interactive Flutter holographic or lenticular cards from one supplied raster card image using a repaired scenery plate, an original-pixel merged foreground, visible-only semantic contour glow, signed parallax, diagonal foil sweep, and touch-safe tilt. Use when an AI coding agent needs to generate aligned card assets, port the holo-card renderer into a Flutter runtime shader, add a reusable component and test page, or fix duplicated subjects, contour drift, grid-like foil, wrong sweep direction, weak small-angle response, or touch-down pitch jumps.
 ---
 
 # Build Flutter Holo Card

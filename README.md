@@ -17,22 +17,43 @@
 - 按住、拖动、松手的过渡保持连贯，卡片会自然回正。
 - 背景和前景两层就能完成效果，不需要把人物单独拆成第三个移动图层。
 
-## 让 AI 帮你安装
+## 谁可以用
 
-不想自己搬文件？把下面这段完整复制给 Codex，它会自己找到门牌号：
+它并不挑模型。只要你的 AI Agent 能查看图片、调用图片生成或编辑工具、读写本地文件、运行 Python，并能修改 Flutter 工程，就可以照着这套流程干活。
+
+`SKILL.md`、资源处理脚本、Flutter 组件和 Shader 都是通用部分；`agents/openai.yaml` 只是给 OpenAI/Codex 准备的可选界面信息，不影响其他 Agent 使用。
+
+## 让 AI Agent 帮你安装
+
+不想自己搬文件？把下面这段完整丢给具备文件和命令行工具的 AI Agent：
 
 ```text
-请使用 $skill-installer 从 GitHub 安装这个 Codex Skill：
+请从下面的 GitHub 仓库安装 build-flutter-holo-card：
 
 仓库：https://github.com/2912826201/flutter-holo-card-skill.git
 Skill 路径：skills/build-flutter-holo-card
 
-请将它安装到当前用户的 Codex Skills 目录。若同名 Skill 已存在，不要直接覆盖，先告诉我并询问如何处理。安装完成后，请验证 SKILL.md 与 agents/openai.yaml，并告诉我该 Skill 会从下一轮对话开始可用。
+请先识别当前 AI Agent 的 Skill 安装机制：
+1. 如果支持 SKILL.md 或 Agent Skills，请将整个 Skill 目录安装到当前用户的 Skills 目录，不要只复制 SKILL.md。
+2. 如果不支持自动发现 Skill，请保留完整仓库，并告诉我今后如何让 Agent 先读取该 SKILL.md 再执行任务。
+3. 若同名目录已经存在，不要直接覆盖，先告诉我并询问如何处理。
+4. 安装所需的 Python 依赖，并检查 scripts、references、assets 与 SKILL.md 是否完整。
+5. 完成后告诉我在当前 AI Agent 中的具体调用方式。
+```
+
+### Codex 兼容入口
+
+Codex 用户也可以直接复制这一句：
+
+```text
+请使用 $skill-installer，从 https://github.com/2912826201/flutter-holo-card-skill.git 的 skills/build-flutter-holo-card 路径安装这个 Skill。
 ```
 
 ## 手动安装
 
-把 `skills/build-flutter-holo-card` 放进 Codex 的 Skills 目录：
+把完整的 `skills/build-flutter-holo-card` 目录放进你的 AI Agent 所使用的 Skills 目录。不同工具的目录位置并不相同，请以对应工具的说明为准。
+
+Codex 的默认位置通常是：
 
 ```text
 ~/.codex/skills/build-flutter-holo-card
@@ -40,7 +61,13 @@ Skill 路径：skills/build-flutter-holo-card
 
 ## 开始做卡
 
-安装完成后新开一轮对话，附上卡图，然后直接说：
+安装完成后，附上卡图并告诉 Agent：
+
+```text
+请读取并执行 build-flutter-holo-card 的 SKILL.md，把这张图制作成 Flutter 全息卡资源和可测试组件。
+```
+
+在支持 Skill 调用语法的环境中，也可以直接调用 `build-flutter-holo-card`；例如 Codex 可使用：
 
 ```text
 使用 $build-flutter-holo-card，把这张图做成 Flutter 全息卡。
