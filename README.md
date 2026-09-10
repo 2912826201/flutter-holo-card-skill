@@ -17,7 +17,20 @@
 - 按住、拖动、松手的过渡保持连贯，卡片会自然回正。
 - 背景和前景两层就能完成效果，不需要把人物单独拆成第三个移动图层。
 
-## 怎么用
+## 让 AI 帮你安装
+
+不想自己搬文件？把下面这段完整复制给 Codex，它会自己找到门牌号：
+
+```text
+请使用 $skill-installer 从 GitHub 安装这个 Codex Skill：
+
+仓库：https://github.com/2912826201/flutter-holo-card-skill.git
+Skill 路径：skills/build-flutter-holo-card
+
+请将它安装到当前用户的 Codex Skills 目录。若同名 Skill 已存在，不要直接覆盖，先告诉我并询问如何处理。安装完成后，请验证 SKILL.md 与 agents/openai.yaml，并告诉我该 Skill 会从下一轮对话开始可用。
+```
+
+## 手动安装
 
 把 `skills/build-flutter-holo-card` 放进 Codex 的 Skills 目录：
 
@@ -25,7 +38,9 @@
 ~/.codex/skills/build-flutter-holo-card
 ```
 
-重新启动 Codex，附上卡图，然后直接说：
+## 开始做卡
+
+安装完成后新开一轮对话，附上卡图，然后直接说：
 
 ```text
 使用 $build-flutter-holo-card，把这张图做成 Flutter 全息卡。
