@@ -1,0 +1,19 @@
+name: build_flutter_holo_card_template
+description: Validation package for the reusable Flutter holo-card templates.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  shaders:
+    - shaders/holographic_card.frag

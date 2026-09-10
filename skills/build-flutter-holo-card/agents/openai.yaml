@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Flutter Holo Card"
+  short_description: "Build layered Flutter holographic cards"
+  default_prompt: "Use $build-flutter-holo-card to turn this card image into aligned Flutter holographic-card assets and a tested component."
