@@ -6,7 +6,7 @@
 |---|---|---|
 | Source | Supplied card, normalized without cropping | Preserve source |
 | Background | Complete scenery only, including repaired concealed regions | Opaque inside the card boundary; exterior rounded corners may stay transparent |
-| Foreground | Original source pixels for character, typography, symbols, panels, credits, and frame | Transparent only where scenery was removed |
+| Foreground | Original source pixels for character, typography, symbols, panels, credits, and frame; optionally one or more bounded source-pixel depth-lock patches | Transparent where scenery remains independently moving |
 | Structure | Actually visible character contours and selected form lines, white on black | Opaque black canvas |
 | Bloom | Near blur in R, wide blur in G, B=0 | Opaque |
 
@@ -29,6 +29,14 @@ Ask the image model for a full-color selection aid, not final artwork:
 The model may repaint retained colors or spell glyphs incorrectly. That is acceptable in this temporary plate because only the green/non-green semantic boundary is consumed. It is not acceptable for the model to move a silhouette, omit a visible element, merge a scenery hole, or retain a scenery island.
 
 Run `prepare_foreground.py`. It converts chroma green to alpha and copies all RGB from the normalized source. Inspect the temporary `foreground-on-black.png`, `foreground-on-white.png`, and `foreground-alignment-overlay.png`. Require `source_rgb_preserved: true` in `foreground-report.json`, then remove these intermediates during final cleanup.
+
+## Ambiguous enclosed scenery pockets
+
+Do not force a pixel-perfect cut through a complex subject when the selection leaves several scenery fragments inside or beside a narrow limb, garment, hair strand, or frame junction. If those fragments surround one enclosed transparent pocket, assign that entire pocket to foreground depth as a single source-pixel patch. This trades a small amount of local parallax for a continuous undistorted subject and prevents neighboring copies of the same scenery from sliding against each other.
+
+Use `bridge_foreground.py` with a seed inside the reviewed transparent pocket. The script fills the connected component only when it stays away from the canvas edge and remains under the configured coverage limit. It always rebuilds RGB from the normalized source. Review its red overlay and black/white previews before accepting it.
+
+Do not use a depth-lock patch when the component opens into the main scenery, when a boundary would cut through a salient background shape, or when the total patch is large enough to erase useful depth. In those cases regenerate the selection plate. Never synthesize or repaint the subject for this correction.
 
 ## Visible-only structure prompt
 
@@ -56,7 +64,7 @@ python scripts/prepare_occlusion_mask.py \
 
 The white area may be wider than a text glyph but must not remove important visible character contours. Inspect the overlay before preparing bloom.
 
-All selection plates, masks, per-stage previews, alignment overlays, normalized source copies, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave only the four runtime maps.
+All selection plates, masks, depth-lock overlays, per-stage previews, alignment overlays, normalized source copies, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave only the four runtime maps.
 
 ## Alignment
 

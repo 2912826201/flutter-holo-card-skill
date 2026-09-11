@@ -29,6 +29,8 @@ class ScriptTests(unittest.TestCase):
             (root / "source.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
             (root / "alignment-overlay.png").write_bytes(b"temporary")
+            (root / "foreground-bridge-mask.png").write_bytes(b"temporary")
+            (root / "foreground-bridge-overlay.png").write_bytes(b"temporary")
             (root / "notes-owned-by-user.txt").write_text("keep", encoding="utf-8")
 
             cleaned = subprocess.run(
@@ -47,6 +49,8 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse((root / "source.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
             self.assertFalse((root / "alignment-overlay.png").exists())
+            self.assertFalse((root / "foreground-bridge-mask.png").exists())
+            self.assertFalse((root / "foreground-bridge-overlay.png").exists())
             self.assertTrue((root / "notes-owned-by-user.txt").is_file())
             for name in final_names:
                 self.assertTrue((root / name).is_file())
@@ -239,6 +243,106 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(black_preview.is_file())
             self.assertTrue(white_preview.is_file())
             self.assertTrue(overlay.is_file())
+
+    def test_bridge_foreground_locks_enclosed_source_pixel_pocket(self) -> None:
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            self.skipTest("opencv-python-headless is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            foreground = root / "foreground.png"
+            output = root / "output.png"
+            mask = root / "mask.png"
+            overlay = root / "overlay.png"
+            report_path = root / "report.json"
+
+            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            ImageDraw.Draw(source_image).rectangle(
+                (30, 45, 70, 95), fill=(220, 80, 150, 255)
+            )
+            source_image.save(source)
+
+            foreground_image = source_image.copy()
+            alpha = Image.new("L", source_image.size, 255)
+            ImageDraw.Draw(alpha).rectangle((38, 54, 62, 86), fill=0)
+            foreground_image.putalpha(alpha)
+            foreground_image.save(foreground)
+
+            bridged = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "bridge_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--foreground",
+                    str(foreground),
+                    "--seed",
+                    "50,70",
+                    "--output-foreground",
+                    str(output),
+                    "--output-mask",
+                    str(mask),
+                    "--output-overlay",
+                    str(overlay),
+                    "--output-report",
+                    str(report_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(bridged.stdout)
+            self.assertTrue(report["ok"])
+            self.assertTrue(report["source_rgb_preserved"])
+            self.assertEqual(report["component_count"], 1)
+            self.assertGreater(report["bridge_coverage"], 0.04)
+            self.assertEqual(Image.open(output).convert("RGBA").getpixel((50, 70))[3], 255)
+            self.assertEqual(
+                Image.open(source).convert("RGB").tobytes(),
+                Image.open(output).convert("RGB").tobytes(),
+            )
+            self.assertTrue(mask.is_file())
+            self.assertTrue(overlay.is_file())
+            self.assertTrue(report_path.is_file())
+
+    def test_bridge_foreground_rejects_open_scenery(self) -> None:
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            self.skipTest("opencv-python-headless is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            foreground = root / "foreground.png"
+            Image.new("RGBA", (100, 140), (30, 70, 120, 255)).save(source)
+            foreground_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            alpha = Image.new("L", foreground_image.size, 255)
+            ImageDraw.Draw(alpha).rectangle((0, 40, 65, 100), fill=0)
+            foreground_image.putalpha(alpha)
+            foreground_image.save(foreground)
+
+            bridged = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "bridge_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--foreground",
+                    str(foreground),
+                    "--seed",
+                    "30,70",
+                    "--output-foreground",
+                    str(root / "output.png"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(bridged.returncode, 0)
+            self.assertIn("touching the canvas edge", bridged.stderr)
 
     def test_prepare_and_check_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
