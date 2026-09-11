@@ -75,7 +75,8 @@ class _HolographicCardState extends State<HolographicCard>
   @override
   void didUpdateWidget(HolographicCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.backgroundImage != widget.backgroundImage ||
+    if (oldWidget.cardImage != widget.cardImage ||
+        oldWidget.backgroundImage != widget.backgroundImage ||
         oldWidget.foregroundImage != widget.foregroundImage ||
         oldWidget.characterContourImage != widget.characterContourImage ||
         oldWidget.characterBloomImage != widget.characterBloomImage ||
@@ -120,6 +121,7 @@ class _HolographicCardState extends State<HolographicCard>
     final List<ui.Image> loadedImages = [];
     try {
       for (final ImageProvider provider in <ImageProvider>[
+        widget.cardImage,
         widget.backgroundImage,
         widget.foregroundImage,
         widget.characterContourImage,
@@ -131,10 +133,11 @@ class _HolographicCardState extends State<HolographicCard>
         widget.shaderAssetPath,
       );
       return _Resources(
-        backgroundImage: loadedImages[0],
-        foregroundImage: loadedImages[1],
-        contourImage: loadedImages[2],
-        bloomImage: loadedImages[3],
+        cardMaskImage: loadedImages[0],
+        backgroundImage: loadedImages[1],
+        foregroundImage: loadedImages[2],
+        contourImage: loadedImages[3],
+        bloomImage: loadedImages[4],
         shader: program.fragmentShader(),
       );
     } catch (_) {
@@ -306,6 +309,7 @@ class _HolographicCardState extends State<HolographicCard>
                   child: CustomPaint(
                     painter: HolographicCardPainter(
                       shader: resources.shader,
+                      cardMaskImage: resources.cardMaskImage,
                       backgroundImage: resources.backgroundImage,
                       foregroundImage: resources.foregroundImage,
                       characterContourImage: resources.contourImage,
@@ -329,6 +333,7 @@ class _HolographicCardState extends State<HolographicCard>
 
 class _Resources {
   const _Resources({
+    required this.cardMaskImage,
     required this.backgroundImage,
     required this.foregroundImage,
     required this.contourImage,
@@ -336,6 +341,7 @@ class _Resources {
     required this.shader,
   });
 
+  final ui.Image cardMaskImage;
   final ui.Image backgroundImage;
   final ui.Image foregroundImage;
   final ui.Image contourImage;
@@ -343,6 +349,7 @@ class _Resources {
   final ui.FragmentShader shader;
 
   void dispose() {
+    cardMaskImage.dispose();
     backgroundImage.dispose();
     foregroundImage.dispose();
     contourImage.dispose();

@@ -10,6 +10,7 @@ uniform sampler2D uBackground;
 uniform sampler2D uForeground;
 uniform sampler2D uStructure;
 uniform sampler2D uStructureBloom;
+uniform sampler2D uCardMask;
 
 out vec4 fragColor;
 
@@ -53,8 +54,7 @@ float band(vec2 point, vec2 view) {
 
 void main() {
   vec2 point = FlutterFragCoord().xy / uSize;
-  vec4 staticBackground = texture(uBackground, point);
-  float cardMask = staticBackground.a;
+  float cardMask = texture(uCardMask, point).a;
   if (cardMask <= 0.001) {
     fragColor = vec4(0.0);
     return;
@@ -77,10 +77,10 @@ void main() {
     uBackground,
     clamp(backgroundUv, vec2(0.0), vec2(1.0))
   );
-  background.a *= cardMask * insideUnit(backgroundUv);
+  background.a *= insideUnit(backgroundUv);
 
   float foregroundAlpha = foreground.a;
-  float finalAlpha = max(cardMask, foregroundAlpha);
+  float finalAlpha = cardMask;
   vec3 foregroundColor = unpremultiply(foreground);
   vec3 backgroundColor = unpremultiply(background);
   vec3 base = mix(backgroundColor, foregroundColor, foregroundAlpha);

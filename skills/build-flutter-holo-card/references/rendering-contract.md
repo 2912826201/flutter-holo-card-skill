@@ -4,6 +4,8 @@
 
 Render `background -> merged foreground -> view-dependent material and contour emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and contour emission only where the visible structure and foreground alpha overlap. The foreground already contains character, typography, panels, and frame; the structure map stays black beneath its non-character UI pixels.
 
+Load the supplied source card as a fifth static sampler and use only its Alpha as the final card-shape mask. The repaired background is intentionally opaque for parallax sampling and must never define the outer silhouette. Multiply the final premultiplied color and Alpha by the static source mask so the background, shifted foreground, foil, glare, stars, contour, and bloom all share the exact antialiased card corners.
+
 Use one normalized view vector for every internal effect:
 
 ```text
@@ -70,7 +72,7 @@ This prevents a lower-half touch from immediately pitching the card before the u
 
 ## Required tests
 
-- Shader and all four generated images load.
+- Shader, source card mask, and all four generated images load.
 - Default, narrow, and wide layouts do not overflow.
 - Drag changes both transform and shader view.
 - Release is continuous before reaching center.

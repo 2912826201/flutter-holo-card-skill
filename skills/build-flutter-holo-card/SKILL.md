@@ -125,6 +125,7 @@ Keep these properties intact:
 
 - sample the background with `(p - .5) * .5 + .5 - view * .25`;
 - sample foreground, structure, and bloom with the identical signed-depth UV;
+- use the static source-card Alpha as the final card-shape mask; never use the opaque repaired background Alpha for corner clipping;
 - apply foil, sparse stars, moving glare, and contour emission only through valid foreground/card alpha;
 - keep the sweep bands oriented from lower-left to upper-right;
 - increase small-angle responsiveness by multiplying the single `view` vector, so every linked effect stays synchronized;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -48,6 +49,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(renderer, findsOneWidget);
+    expect(_painter(tester, renderer).cardMaskImage.width, 2);
+    expect(_painter(tester, renderer).cardMaskImage.height, 2);
+    final String shaderSource = File(
+      'shaders/holographic_card.frag',
+    ).readAsStringSync();
+    expect(
+      shaderSource,
+      contains('float cardMask = texture(uCardMask, point).a;'),
+    );
+    expect(shaderSource, contains('float finalAlpha = cardMask;'));
 
     final Rect card = tester.getRect(renderer);
     final TestGesture gesture = await tester.startGesture(

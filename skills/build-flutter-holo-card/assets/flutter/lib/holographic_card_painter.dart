@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 class HolographicCardPainter extends CustomPainter {
   const HolographicCardPainter({
     required this.shader,
+    required this.cardMaskImage,
     required this.backgroundImage,
     required this.foregroundImage,
     required this.characterContourImage,
@@ -16,6 +17,7 @@ class HolographicCardPainter extends CustomPainter {
   });
 
   final ui.FragmentShader shader;
+  final ui.Image cardMaskImage;
   final ui.Image backgroundImage;
   final ui.Image foregroundImage;
   final ui.Image characterContourImage;
@@ -42,7 +44,8 @@ class HolographicCardPainter extends CustomPainter {
       ..setImageSampler(0, backgroundImage)
       ..setImageSampler(1, foregroundImage)
       ..setImageSampler(2, characterContourImage)
-      ..setImageSampler(3, characterBloomImage);
+      ..setImageSampler(3, characterBloomImage)
+      ..setImageSampler(4, cardMaskImage);
 
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
@@ -50,6 +53,7 @@ class HolographicCardPainter extends CustomPainter {
   @override
   bool shouldRepaint(HolographicCardPainter oldDelegate) {
     return oldDelegate.shader != shader ||
+        oldDelegate.cardMaskImage != cardMaskImage ||
         oldDelegate.backgroundImage != backgroundImage ||
         oldDelegate.foregroundImage != foregroundImage ||
         oldDelegate.characterContourImage != characterContourImage ||
