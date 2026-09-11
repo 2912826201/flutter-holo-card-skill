@@ -80,7 +80,7 @@ Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`Cust
 已经有自己的 Flutter 实现，只想让 Agent 把“闪卡食材”备好吗？可以明确启用仅资源模式：
 
 ```text
-请使用 build-flutter-holo-card 的仅资源模式处理我提供的卡图。只生成并校准 background.png、foreground.png、character_contour.png、character_bloom.png 和 alignment-overlay.png，运行资源检查并报告结果。不要创建或修改任何 Flutter、Dart、Shader、页面、路由、测试或 pubspec 代码。
+请使用 build-flutter-holo-card 的仅资源模式处理我提供的卡图。只生成并校准 source.png、background.png、foreground.png、character_contour.png 和 character_bloom.png 这五张运行时图片，使用临时对齐预览完成检查并报告结果。不要创建或修改任何 Flutter、Dart、Shader、页面、路由、测试或 pubspec 代码。
 ```
 
 在 Codex 中也可以这样说：
@@ -89,7 +89,7 @@ Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`Cust
 使用 $build-flutter-holo-card，只生成并校准全息卡所需资源图，不生成或修改代码。
 ```
 
-`alignment-overlay.png` 只在生成阶段用来检查轮廓是否贴合。验收完成后，Skill 会自动清掉它以及选择板、遮罩、其他临时预览和校准报告，输出目录只留下四张运行时资源。
+`alignment-overlay.png` 只在生成阶段用来检查轮廓是否贴合。验收完成后，Skill 会自动清掉它以及选择板、遮罩、其他临时预览和校准报告，输出目录只留下五张运行时资源。`source.png` 既负责加载失败时的原图降级，也提供卡片圆角的静态 Alpha 遮罩，所以不能丢。
 
 ## 本地验证
 

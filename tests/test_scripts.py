@@ -19,6 +19,7 @@ class ScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             final_names = (
+                "source.png",
                 "background.png",
                 "foreground.png",
                 "character_contour.png",
@@ -26,7 +27,7 @@ class ScriptTests(unittest.TestCase):
             )
             for name in final_names:
                 (root / name).write_bytes(b"final")
-            (root / "source.png").write_bytes(b"temporary")
+            (root / "background-generated.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
             (root / "alignment-overlay.png").write_bytes(b"temporary")
             (root / "foreground-bridge-mask.png").write_bytes(b"temporary")
@@ -46,7 +47,7 @@ class ScriptTests(unittest.TestCase):
             )
             report = json.loads(cleaned.stdout)
             self.assertTrue(report["ok"])
-            self.assertFalse((root / "source.png").exists())
+            self.assertFalse((root / "background-generated.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
             self.assertFalse((root / "alignment-overlay.png").exists())
             self.assertFalse((root / "foreground-bridge-mask.png").exists())
@@ -54,6 +55,32 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue((root / "notes-owned-by-user.txt").is_file())
             for name in final_names:
                 self.assertTrue((root / name).is_file())
+
+    def test_cleanup_assets_requires_runtime_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (
+                "background.png",
+                "foreground.png",
+                "character_contour.png",
+                "character_bloom.png",
+            ):
+                (root / name).write_bytes(b"final")
+            (root / "alignment-overlay.png").write_bytes(b"temporary")
+
+            cleaned = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "cleanup_assets.py"),
+                    "--output-dir",
+                    str(root),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(cleaned.returncode, 0)
+            self.assertIn("source.png", cleaned.stderr)
+            self.assertTrue((root / "alignment-overlay.png").is_file())
 
     def test_calibrate_structure_recovers_small_global_drift(self) -> None:
         try:

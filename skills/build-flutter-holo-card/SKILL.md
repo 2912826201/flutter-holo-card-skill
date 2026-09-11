@@ -104,16 +104,17 @@ python scripts/prepare_structure_maps.py \
 White means occluded. Manual `--forward-affine a,b,c,d,e,f` remains available only when automatic calibration clearly found the right global family but needs a reviewed full-canvas correction.
 
 9. Run `scripts/check_assets.py --source source.png ...` before integration. Treat source-RGB mismatch, large background-alpha gaps, missing foreground transparency, canvas mismatch, empty structure, excessive line coverage, or contour spill into occlusions as failures.
-10. After checks and visual inspection pass, run `python scripts/cleanup_assets.py --output-dir <asset-directory>`. It removes only the known intermediate filenames and refuses to run unless every final file exists. Do not leave source copies, selection plates, masks, previews, or reports in the delivered asset directory.
+10. After checks and visual inspection pass, run `python scripts/cleanup_assets.py --output-dir <asset-directory>`. It removes only the known intermediate filenames and refuses to run unless every final file exists. Keep the normalized original as `source.png`; do not leave any additional source copies, selection plates, masks, previews, or reports in the delivered asset directory.
 
 In asset-only mode, deliver these calibrated runtime files on the same canvas:
 
+- normalized original `source.png` for static fallback and the exact card-shape Alpha mask;
 - repaired scenery-only `background.png`;
 - original-pixel merged transparent `foreground.png`;
 - visible-only grayscale `character_contour.png`;
 - packed two-scale `character_bloom.png`.
 
-Use selection plates, masks, black/white previews, alignment overlays, aligned structures, and reports only during preparation. Delete them with `cleanup_assets.py` after validation. Report the four retained runtime paths and the `check_assets.py` result, then stop without entering the Flutter implementation section.
+Use selection plates, masks, black/white previews, alignment overlays, aligned structures, and reports only during preparation. Delete them with `cleanup_assets.py` after validation. Report the five retained runtime paths and the `check_assets.py` result, then stop without entering the Flutter implementation section.
 
 ## Implement Flutter rendering
 

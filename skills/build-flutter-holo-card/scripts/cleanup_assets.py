@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 FINAL_FILES = {
+    "source.png",
     "background.png",
     "foreground.png",
     "character_contour.png",
@@ -18,7 +19,6 @@ FINAL_FILES = {
 TEMPORARY_FILES = {
     "alignment-overlay.png",
     "background-generated.png",
-    "source.png",
     "foreground-selection.png",
     "foreground-alpha.png",
     "foreground-on-black.png",

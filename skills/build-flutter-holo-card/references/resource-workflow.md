@@ -64,7 +64,7 @@ python scripts/prepare_occlusion_mask.py \
 
 The white area may be wider than a text glyph but must not remove important visible character contours. Inspect the overlay before preparing bloom.
 
-All selection plates, masks, depth-lock overlays, per-stage previews, alignment overlays, normalized source copies, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave only the four runtime maps.
+Keep the accepted normalized original as `source.png`; it is the runtime fallback and static card-shape Alpha mask. All other source copies, selection plates, masks, depth-lock overlays, per-stage previews, alignment overlays, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave exactly `source.png` plus the four derived runtime images.
 
 ## Alignment
 

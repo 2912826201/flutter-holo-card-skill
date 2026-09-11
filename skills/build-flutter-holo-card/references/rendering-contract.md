@@ -72,7 +72,7 @@ This prevents a lower-half touch from immediately pitching the card before the u
 
 ## Required tests
 
-- Shader, source card mask, and all four generated images load.
+- Shader and all five runtime images load: source card mask plus four derived images.
 - Default, narrow, and wide layouts do not overflow.
 - Drag changes both transform and shader view.
 - Release is continuous before reaching center.
