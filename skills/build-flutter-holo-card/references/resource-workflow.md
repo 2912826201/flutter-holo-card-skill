@@ -22,11 +22,13 @@ Reject a result containing a faint subject, empty silhouette, text ghost, frame 
 
 ## Foreground selection plate
 
-Ask the image model for a selection aid, not replacement artwork:
+Ask the image model for a full-color selection aid, not final artwork:
 
-> Preserve the supplied card exactly. Replace scenery-only pixels with one flat saturated chroma matte. Retain the character and every foreground card-interface pixel: header, title, rules text, symbols, panels, credits, logos, edge decorations, and complete frame. Do not redraw, sharpen, recolor, move, crop, or reconstruct retained pixels. Keep the entire original canvas and positions.
+> Keep the supplied full-card canvas, aspect ratio, framing, scale, silhouette, and overlap positions. Replace every scenery-only pixel with one flat saturated chroma green matte. Keep non-green all character pixels and every foreground card-interface region: header, title, rules text, symbols, panels, credits, logos, edge decorations, and complete frame. Keep dark ink, pale highlights, holes between limbs, and detached foreground marks correctly classified. Do not crop, recenter, rotate, reconstruct hidden anatomy, or leave scenery islands inside foreground regions.
 
-Convert only inspected matte-connected regions to alpha. Copy RGB from the normalized source, never from the generated selection plate. Preserve pale clothing, skin, white highlights, dark ink, enclosed gaps, detached decorations, and antialiased edges. Inspect the result over black and white.
+The model may repaint retained colors or spell glyphs incorrectly. That is acceptable in this temporary plate because only the green/non-green semantic boundary is consumed. It is not acceptable for the model to move a silhouette, omit a visible element, merge a scenery hole, or retain a scenery island.
+
+Run `prepare_foreground.py`. It converts chroma green to alpha and copies all RGB from the normalized source. Inspect the temporary `foreground-on-black.png`, `foreground-on-white.png`, and `foreground-alignment-overlay.png`. Require `source_rgb_preserved: true` in `foreground-report.json`, then remove these intermediates during final cleanup.
 
 ## Visible-only structure prompt
 
@@ -36,15 +38,35 @@ Generate from the accepted foreground or a temporary character-only view at the 
 
 A comparison image may define line quality, but never copy it into project assets. Generate the structure from the current card.
 
+## Visible-pixel occlusion prompt
+
+Generate this after accepting the foreground. It is a temporary safety mask, not a runtime depth layer:
+
+> Produce a conservative black-and-white mask on the exact complete source canvas. White means a visible card-interface or non-character pixel that must block character contour light; black means an actually visible character pixel. Make the outer frame, typography, numbers, symbols, logos, credits, footer marks, solid information panels, and continuous safety ribbons around rules-text lines white. Visible character pixels take priority and stay black where the character overlaps the geometric bounds of a header, title panel, or border. Where text or a panel visibly covers the character, keep the covering region white and do not reconstruct the hidden character. Preserve the original canvas, scale, positions, and layer order. Use flat black and white only; no line art, scenery texture, gradients, glow, or transparency.
+
+Normalize it with:
+
+```bash
+python scripts/prepare_occlusion_mask.py \
+  --reference source.png \
+  --selection ui-occlusion-selection.png \
+  --output-mask ui-occlusion.png \
+  --output-overlay ui-occlusion-overlay.png
+```
+
+The white area may be wider than a text glyph but must not remove important visible character contours. Inspect the overlay before preparing bloom.
+
+All selection plates, masks, per-stage previews, alignment overlays, normalized source copies, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave only the four runtime maps.
+
 ## Alignment
 
 The source, foreground, structure, and bloom always occupy the same full canvas. Never align independently cropped bounding boxes.
 
 1. Create a red structure overlay on the foreground with `prepare_structure_maps.py --output-overlay`.
 2. Check eyes, fingers, face outline, long outer silhouettes, and UI crossings.
-3. Prefer rejection and regeneration when the model changes anatomy.
-4. Use a single global affine correction only for uniform framing drift. Record the six forward coefficients and recheck the overlay.
-5. Apply a UI occlusion mask after registration so the transformation cannot move hidden lines onto text or frame pixels.
+3. Run `calibrate_structure.py` to estimate a safe full-canvas affine from generated semantic lines to original source edges. Record its six forward coefficients and correlation report.
+4. Prefer rejection and regeneration when the model changes anatomy. Automatic or manual affine is only for uniform framing drift.
+5. Apply the visible-pixel occlusion mask after registration so transformed lines cannot move onto text, panels, scenery, or frame pixels.
 
 An occlusion mask is a full-canvas grayscale image: `255` blocks contour emission and `0` permits it. Keep a safety margin around small text when exact per-glyph masking is unreliable.
 

@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +15,231 @@ SCRIPTS = ROOT / "skills" / "build-flutter-holo-card" / "scripts"
 
 
 class ScriptTests(unittest.TestCase):
+    def test_cleanup_assets_keeps_only_final_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final_names = (
+                "background.png",
+                "foreground.png",
+                "character_contour.png",
+                "character_bloom.png",
+            )
+            for name in final_names:
+                (root / name).write_bytes(b"final")
+            (root / "source.png").write_bytes(b"temporary")
+            (root / "foreground-alpha.png").write_bytes(b"temporary")
+            (root / "alignment-overlay.png").write_bytes(b"temporary")
+            (root / "notes-owned-by-user.txt").write_text("keep", encoding="utf-8")
+
+            cleaned = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "cleanup_assets.py"),
+                    "--output-dir",
+                    str(root),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(cleaned.stdout)
+            self.assertTrue(report["ok"])
+            self.assertFalse((root / "source.png").exists())
+            self.assertFalse((root / "foreground-alpha.png").exists())
+            self.assertFalse((root / "alignment-overlay.png").exists())
+            self.assertTrue((root / "notes-owned-by-user.txt").is_file())
+            for name in final_names:
+                self.assertTrue((root / name).is_file())
+
+    def test_calibrate_structure_recovers_small_global_drift(self) -> None:
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            self.skipTest("opencv-python-headless is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = root / "reference.png"
+            structure = root / "structure.png"
+            aligned = root / "aligned.png"
+            report_path = root / "report.json"
+
+            reference_image = Image.new("RGB", (300, 420), (24, 30, 38))
+            reference_lines = Image.new("L", reference_image.size, 0)
+            draw = ImageDraw.Draw(reference_lines)
+            draw.ellipse((78, 50, 230, 214), outline=255, width=4)
+            draw.line((92, 118, 210, 310), fill=255, width=4)
+            draw.line((54, 330, 242, 350), fill=255, width=4)
+            reference_image.paste((235, 235, 235), mask=reference_lines)
+            reference_image.save(reference)
+
+            generated = reference_lines.resize((288, 403), Image.Resampling.BICUBIC)
+            structure_image = Image.new("L", reference_image.size, 0)
+            structure_image.paste(generated, (7, 9))
+            structure_image.save(structure)
+
+            before = ImageStat.Stat(
+                ImageChops.difference(reference_lines, structure_image)
+            ).mean[0]
+            calibrated = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "calibrate_structure.py"),
+                    "--reference",
+                    str(reference),
+                    "--structure",
+                    str(structure),
+                    "--output-structure",
+                    str(aligned),
+                    "--output-report",
+                    str(report_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(calibrated.stdout)
+            self.assertTrue(report["ok"])
+            self.assertGreater(report["edge_correlation"], 0.12)
+            after = ImageStat.Stat(
+                ImageChops.difference(
+                    reference_lines, Image.open(aligned).convert("L")
+                )
+            ).mean[0]
+            self.assertLess(after, before)
+            self.assertTrue(report_path.is_file())
+
+    def test_prepare_occlusion_mask_expands_ui_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = root / "reference.png"
+            selection = root / "selection.png"
+            output = root / "occlusion.png"
+            overlay = root / "overlay.png"
+            Image.new("RGBA", (100, 140), (80, 100, 120, 255)).save(reference)
+            selection_image = Image.new("L", (200, 280), 0)
+            ImageDraw.Draw(selection_image).rectangle((20, 20, 180, 45), fill=255)
+            ImageDraw.Draw(selection_image).rectangle((35, 220, 165, 265), fill=255)
+            selection_image.save(selection)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_occlusion_mask.py"),
+                    "--reference",
+                    str(reference),
+                    "--selection",
+                    str(selection),
+                    "--output-mask",
+                    str(output),
+                    "--output-overlay",
+                    str(overlay),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(report["canvas"], [100, 140])
+            self.assertGreater(report["occlusion_coverage"], 0.1)
+            self.assertTrue(output.is_file())
+            self.assertTrue(overlay.is_file())
+
+    def test_normalize_source_preserves_aspect_without_crop(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            output = root / "normalized.png"
+            Image.new("RGBA", (50, 70), (20, 40, 60, 255)).save(source)
+            normalized = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "normalize_source.py"),
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(output),
+                    "--width",
+                    "1000",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(normalized.stdout)
+            self.assertEqual(report["working_canvas"], [1000, 1400])
+            self.assertFalse(report["cropped"])
+            with Image.open(output) as normalized_image:
+                self.assertEqual(normalized_image.size, (1000, 1400))
+
+    def test_prepare_foreground_preserves_source_rgb(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            selection = root / "selection.png"
+            foreground = root / "foreground.png"
+            mask = root / "mask.png"
+            black_preview = root / "black.png"
+            white_preview = root / "white.png"
+            overlay = root / "overlay.png"
+
+            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            ImageDraw.Draw(source_image).rounded_rectangle(
+                (1, 1, 98, 138), radius=8, outline=(240, 240, 240, 255), width=5
+            )
+            ImageDraw.Draw(source_image).ellipse(
+                (28, 30, 72, 108), fill=(215, 80, 150, 255)
+            )
+            source_image.save(source)
+
+            selection_image = Image.new("RGB", (200, 280), (0, 255, 0))
+            ImageDraw.Draw(selection_image).rounded_rectangle(
+                (2, 2, 197, 277), radius=16, outline=(240, 240, 240), width=10
+            )
+            ImageDraw.Draw(selection_image).ellipse(
+                (56, 60, 144, 216), fill=(210, 70, 145)
+            )
+            selection_image.save(selection)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--selection",
+                    str(selection),
+                    "--output-foreground",
+                    str(foreground),
+                    "--output-mask",
+                    str(mask),
+                    "--output-black-preview",
+                    str(black_preview),
+                    "--output-white-preview",
+                    str(white_preview),
+                    "--output-overlay",
+                    str(overlay),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            self.assertTrue(report["ok"])
+            self.assertTrue(report["source_rgb_preserved"])
+            self.assertEqual(report["canvas"], [100, 140])
+
+            source_rgb = Image.open(source).convert("RGB")
+            foreground_image = Image.open(foreground).convert("RGBA")
+            self.assertEqual(source_rgb.tobytes(), foreground_image.convert("RGB").tobytes())
+            self.assertLess(foreground_image.getchannel("A").getextrema()[0], 10)
+            self.assertGreater(foreground_image.getchannel("A").getextrema()[1], 245)
+            self.assertTrue(mask.is_file())
+            self.assertTrue(black_preview.is_file())
+            self.assertTrue(white_preview.is_file())
+            self.assertTrue(overlay.is_file())
+
     def test_prepare_and_check_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -111,6 +336,49 @@ class ScriptTests(unittest.TestCase):
             checked_report = json.loads(checked.stdout)
             self.assertTrue(checked_report["ok"])
             self.assertGreater(checked_report["background_coverage"], 0.9)
+
+    def test_check_assets_rejects_changed_foreground_rgb(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            background = root / "background.png"
+            foreground = root / "foreground.png"
+            contour = root / "contour.png"
+            bloom = root / "bloom.png"
+            Image.new("RGBA", (40, 56), (20, 40, 60, 255)).save(source)
+            Image.new("RGBA", (40, 56), (20, 40, 60, 255)).save(background)
+            changed = Image.new("RGBA", (40, 56), (21, 40, 60, 0))
+            ImageDraw.Draw(changed).rectangle((10, 10, 30, 45), fill=(21, 40, 60, 255))
+            changed.save(foreground)
+            line = Image.new("RGBA", (40, 56), (0, 0, 0, 255))
+            ImageDraw.Draw(line).line((12, 12, 28, 40), fill=(255, 255, 255, 255))
+            line.save(contour)
+            Image.new("RGBA", (40, 56), (20, 30, 0, 255)).save(bloom)
+
+            checked = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "check_assets.py"),
+                    "--source",
+                    str(source),
+                    "--background",
+                    str(background),
+                    "--foreground",
+                    str(foreground),
+                    "--contour",
+                    str(contour),
+                    "--bloom",
+                    str(bloom),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(checked.returncode, 0)
+            report = json.loads(checked.stdout)
+            self.assertFalse(report["source_rgb_preserved"])
+            self.assertIn(
+                "Foreground RGB differs from the normalized source", report["errors"]
+            )
 
     def test_prepare_rejects_different_aspect_ratio(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

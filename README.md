@@ -89,7 +89,7 @@ Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`Cust
 使用 $build-flutter-holo-card，只生成并校准全息卡所需资源图，不生成或修改代码。
 ```
 
-`alignment-overlay.png` 用来检查轮廓是否贴合，不需要打包进 App；其余四张是运行时资源。
+`alignment-overlay.png` 只在生成阶段用来检查轮廓是否贴合。验收完成后，Skill 会自动清掉它以及选择板、遮罩、其他临时预览和校准报告，输出目录只留下四张运行时资源。
 
 ## 本地验证
 

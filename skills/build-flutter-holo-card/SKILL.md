@@ -7,6 +7,8 @@ description: Build and quality-gate interactive Flutter holographic or lenticula
 
 Produce a two-depth Flutter card: repaired scenery moves backward; character, typography, symbols, panels, and decorative frame remain together in one foreground layer. Apply foil to the composed art, sparse stars to scenery-only pixels, and contour light only to visible structure multiplied by foreground alpha. Do not create a separately moving character layer.
 
+Before running bundled Python scripts, install missing dependencies from this skill directory with `python -m pip install -r requirements.txt`. Do not replace the scripts with improvised one-off extraction code.
+
 ## Choose the execution scope
 
 Choose one scope from the user's request before doing any work:
@@ -32,35 +34,70 @@ Do not silently expand asset-only mode into implementation work. If the user sup
 
 Read [references/resource-workflow.md](references/resource-workflow.md) before generating images.
 
-1. Normalize orientation and choose one working canvas. Resize every layer to that full canvas only after checking aspect ratio.
+1. Normalize orientation and choose one working canvas. Use a 1000 px working width by default for smaller inputs, preserve aspect ratio, and never crop:
+
+```bash
+python scripts/normalize_source.py \
+  --source input.png \
+  --output source.png \
+  --width 1000
+```
+
+Resize every generated layer to that full canvas only after checking aspect ratio.
 2. Generate a complete scenery-only background with concealed areas repaired and enough surrounding content for the renderer's 2x crop. Reject any remaining subject, text, panel, or frame fragment.
-3. Build the merged foreground by deriving alpha from a generated selection plate while retaining the source card's original RGB pixels. Include the character, all text, panels, symbols, credits, and complete decorative frame. Exclude every background pixel.
-4. Generate a semantic structure map on the same canvas from the accepted visible artwork. Require thin white character lines on black. Keep only actually visible silhouette and selected internal form lines. Do not reconstruct lines behind text, panels, symbols, or the frame.
-5. Inspect a colored alignment overlay. The structure and foreground must share canvas coordinates and later share the same shader UV. If a global affine correction fixes only generation framing drift, apply it without changing line art. If anatomy or local geometry differs, reject and regenerate; never replace clean semantic contours with noisy pixel-edge extraction.
-6. Prepare the runtime maps:
+3. Generate a full-color chroma selection plate, then build the merged foreground with `prepare_foreground.py`. The selection plate is a semantic mask aid, not a deliverable: the model may repaint colors or misspell text because none of its RGB enters the result. Judge its green/non-green boundaries, not its lettering. Include the character, all text, panels, symbols, credits, and complete decorative frame. Exclude every background pixel.
+
+```bash
+python scripts/prepare_foreground.py \
+  --source source.png \
+  --selection foreground-selection.png \
+  --output-foreground foreground.png \
+  --output-mask foreground-alpha.png \
+  --output-black-preview foreground-on-black.png \
+  --output-white-preview foreground-on-white.png \
+  --output-overlay foreground-alignment-overlay.png \
+  --output-report foreground-report.json
+```
+
+Require `source_rgb_preserved: true`. Reject missing subject parts, UI, text, frame, or retained scenery islands in the black/white previews. Use `--forward-affine` only for uniform selection framing drift; never patch local anatomy by hand.
+4. Generate a semantic structure map on the same canvas from the accepted foreground. Require thin white character lines on black. Keep actually visible silhouette and selected internal form lines. Do not trace UI or scenery.
+5. Generate a conservative visible-pixel occlusion plate. White marks visible UI, text, panels, frame, and non-character pixels that must suppress contour light; black marks actually visible character pixels. Normalize it with `prepare_occlusion_mask.py`. This mask may use solid text-row ribbons because it is only a safety clip.
+6. Calibrate model framing drift against the original-pixel foreground, then inspect the result. Automatic calibration may apply one safe global affine only; it must never redraw or locally warp anatomy:
+
+```bash
+python scripts/calibrate_structure.py \
+  --reference foreground.png \
+  --structure structure-generated.png \
+  --output-structure structure-aligned.png \
+  --output-report structure-affine.json
+```
+
+Reject a failed calibration report or any local mismatch in eyes, fingers, face, clothing seams, or long silhouettes even when the correlation gate passes.
+7. Prepare the runtime maps:
 
 ```bash
 python scripts/prepare_structure_maps.py \
   --foreground foreground.png \
-  --structure structure-generated.png \
+  --structure structure-aligned.png \
   --output-contour character_contour.png \
   --output-bloom character_bloom.png \
-  --output-overlay alignment-overlay.png
+  --output-overlay alignment-overlay.png \
+  --occlusion-mask ui-occlusion.png
 ```
 
-Supply `--occlusion-mask ui-occlusion.png` when generation did not leave every covered location black. White means occluded. Use `--forward-affine a,b,c,d,e,f` only after reviewing an overlay; it maps input coordinates to output coordinates.
+White means occluded. Manual `--forward-affine a,b,c,d,e,f` remains available only when automatic calibration clearly found the right global family but needs a reviewed full-canvas correction.
 
-7. Run `scripts/check_assets.py` before integration. Treat warnings about large background-alpha gaps, missing foreground transparency, canvas mismatch, empty structure, excessive line coverage, or contour spill into occlusions as failures until inspected.
+8. Run `scripts/check_assets.py --source source.png ...` before integration. Treat source-RGB mismatch, large background-alpha gaps, missing foreground transparency, canvas mismatch, empty structure, excessive line coverage, or contour spill into occlusions as failures.
+9. After checks and visual inspection pass, run `python scripts/cleanup_assets.py --output-dir <asset-directory>`. It removes only the known intermediate filenames and refuses to run unless every final file exists. Do not leave source copies, selection plates, masks, previews, or reports in the delivered asset directory.
 
 In asset-only mode, deliver these calibrated runtime files on the same canvas:
 
 - repaired scenery-only `background.png`;
 - original-pixel merged transparent `foreground.png`;
 - visible-only grayscale `character_contour.png`;
-- packed two-scale `character_bloom.png`;
-- `alignment-overlay.png` for review, clearly marked as a QA artifact rather than a runtime asset.
+- packed two-scale `character_bloom.png`.
 
-Retain `structure-generated.png`, an optional occlusion mask, and recorded affine coefficients when they are needed to reproduce calibration. Report every output path and the `check_assets.py` result, then stop without entering the Flutter implementation section.
+Use selection plates, masks, black/white previews, alignment overlays, aligned structures, and reports only during preparation. Delete them with `cleanup_assets.py` after validation. Report the four retained runtime paths and the `check_assets.py` result, then stop without entering the Flutter implementation section.
 
 ## Implement Flutter rendering
 
@@ -100,6 +137,7 @@ Do not add normal, height, or roughness maps unless the requested design actuall
 
 - Stop if the background still contains a second subject; stronger blur or dimming is not a repair.
 - Stop if foreground extraction changes retained RGB, lettering, facial details, or card geometry.
+- Do not reject a chroma selection plate merely because its colors or glyph spelling were repainted; reject it when its semantic matte boundary is wrong. Never use selection-plate RGB in `foreground.png`.
 - Stop if structure alignment requires local anatomical redrawing. Regenerate from the accepted foreground.
 - Never hide extraction or alignment defects under stronger foil or bloom.
 - Do not split the character from the merged foreground in this workflow.

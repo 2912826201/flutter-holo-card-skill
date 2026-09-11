@@ -1,2 +1,2 @@
-Pillow>=10.0.0
+-r skills/build-flutter-holo-card/requirements.txt
 PyYAML>=6.0

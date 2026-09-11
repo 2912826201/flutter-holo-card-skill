@@ -25,6 +25,7 @@ def coverage(mask: Image.Image, threshold: int = 128) -> float:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path)
     parser.add_argument("--background", required=True, type=Path)
     parser.add_argument("--foreground", required=True, type=Path)
     parser.add_argument("--contour", required=True, type=Path)
@@ -61,6 +62,26 @@ def main() -> int:
         errors.append("Foreground alpha is empty")
     elif foreground_coverage >= 0.999:
         errors.append("Foreground has no transparent scenery region")
+
+    source_rgb_preserved = None
+    if args.source:
+        source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
+        if source.size != foreground.size:
+            errors.append("Source canvas differs from foreground")
+            source_rgb_preserved = False
+        else:
+            source_red, source_green, source_blue, _ = source.split()
+            foreground_red, foreground_green, foreground_blue, _ = foreground.split()
+            source_rgb_preserved = not any(
+                ImageChops.difference(source_channel, foreground_channel).getbbox()
+                for source_channel, foreground_channel in (
+                    (source_red, foreground_red),
+                    (source_green, foreground_green),
+                    (source_blue, foreground_blue),
+                )
+            )
+            if not source_rgb_preserved:
+                errors.append("Foreground RGB differs from the normalized source")
 
     red, green, blue, contour_alpha = contour.split()
     if ImageChops.difference(red, green).getbbox() or ImageChops.difference(
@@ -102,6 +123,7 @@ def main() -> int:
         "canvas": list(foreground.size),
         "background_coverage": round(background_coverage, 6),
         "foreground_coverage": round(foreground_coverage, 6),
+        "source_rgb_preserved": source_rgb_preserved,
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
         "required_visual_review": warnings,
