@@ -46,6 +46,40 @@ Generate from the accepted foreground or a temporary character-only view at the 
 
 A comparison image may define line quality, but never copy it into project assets. Generate the structure from the current card.
 
+## Local contour fallback after a safety refusal
+
+When an image service refuses or safety-blocks semantic line-art generation, accept the refusal and switch paths. Do not retry with euphemisms, prompt obfuscation, or requests to reconstruct hidden anatomy. The fallback must use only local deterministic processing of accepted source pixels.
+
+First define a coarse visible-character scope on the normalized full canvas. Use one or more reviewed rectangles or polygons; subtract trainer portraits, text, panels, symbols, scenery, and frame regions. The shape need not trace the silhouette because the extractor also intersects it with the accepted foreground Alpha:
+
+```bash
+python scripts/prepare_local_character_mask.py \
+  --reference source.png \
+  --foreground foreground.png \
+  --include-polygon "x1,y1;x2,y2;x3,y3" \
+  --exclude-rect x0,y0,x1,y1 \
+  --output-mask character-region-mask.png \
+  --output-overlay character-region-overlay.png \
+  --output-report character-region-report.json
+```
+
+Inspect the green overlay, then extract native source edges:
+
+```bash
+python scripts/extract_local_structure.py \
+  --source source.png \
+  --foreground foreground.png \
+  --character-mask character-region-mask.png \
+  --occlusion-mask ui-occlusion.png \
+  --output-structure structure-local.png \
+  --output-overlay structure-local-overlay.png \
+  --output-report structure-local-report.json
+```
+
+The extractor applies bilateral noise suppression, multi-channel Canny edges, tiny-component rejection, foreground-Alpha clipping, character-region clipping, and UI occlusion locally. It never calls an image model, invents lines, or reconstructs concealed content. Use `structure-local.png` directly with `prepare_structure_maps.py`; skip `calibrate_structure.py` because the local result is already pixel-aligned.
+
+Review the red overlay. Raise `--edge-quantile` when print grain or foil texture is too dense; lower it only when important visible source lines are missing. This fallback intentionally favors exact registration and policy reliability over semantic cleanliness. Reject it if local texture cannot be separated from meaningful visible structure without tracing UI or scenery.
+
 ## Visible-pixel occlusion prompt
 
 Generate this after accepting the foreground. It is a temporary safety mask, not a runtime depth layer:

@@ -76,9 +76,9 @@ python scripts/bridge_foreground.py \
 ```
 
 The script may fill only enclosed connected transparent components, copies RGB exclusively from the source, and rejects excessive coverage. Inspect the red overlay. Accept the trade only when it preserves the subject and removes a local depth conflict while leaving a large independent scenery region. Never bridge an open background region, invent pixels, draw a rectangular patch across scenery, or use this to hide a generally bad selection.
-5. Generate a semantic structure map on the same canvas from the accepted foreground. Require thin white character lines on black. Keep actually visible silhouette and selected internal form lines. Do not trace UI or scenery.
-6. Generate a conservative visible-pixel occlusion plate. White marks visible UI, text, panels, frame, and non-character pixels that must suppress contour light; black marks actually visible character pixels. Normalize it with `prepare_occlusion_mask.py`. This mask may use solid text-row ribbons because it is only a safety clip.
-7. Calibrate model framing drift against the original-pixel foreground, then inspect the result. Automatic calibration may apply one safe global affine only; it must never redraw or locally warp anatomy:
+5. Generate a conservative visible-pixel occlusion plate. White marks visible UI, text, panels, frame, and non-character pixels that must suppress contour light; black marks actually visible character pixels. Normalize it with `prepare_occlusion_mask.py`. This mask may use solid text-row ribbons because it is only a safety clip.
+6. Attempt one semantic structure-map generation on the same canvas from the accepted foreground. Require thin white character lines on black. Keep actually visible silhouette and selected internal form lines. Do not trace UI or scenery. If the image service refuses or safety-blocks this operation, accept the refusal immediately. Do not reword prompts to evade review and do not keep retrying. Use the deterministic local fallback in [references/resource-workflow.md](references/resource-workflow.md): prepare a reviewed coarse character region with `prepare_local_character_mask.py`, then extract source-pixel edges with `extract_local_structure.py` under foreground Alpha and the occlusion mask.
+7. For an AI-generated structure only, calibrate model framing drift against the original-pixel foreground, then inspect the result. Automatic calibration may apply one safe global affine only; it must never redraw or locally warp anatomy. A local fallback structure is already in native pixel coordinates; use it directly and never affine-fit it:
 
 ```bash
 python scripts/calibrate_structure.py \
@@ -158,5 +158,6 @@ Do not add normal, height, or roughness maps unless the requested design actuall
 - Prefer one bounded source-pixel depth-lock patch when a truly enclosed ambiguous scenery pocket would otherwise shred the subject boundary. Reject open or excessive patches that flatten the main scenery.
 - Do not reject a chroma selection plate merely because its colors or glyph spelling were repainted; reject it when its semantic matte boundary is wrong. Never use selection-plate RGB in `foreground.png`.
 - Stop if structure alignment requires local anatomical redrawing. Regenerate from the accepted foreground.
+- Treat a safety refusal during structure generation as the explicit trigger for the local contour fallback, not as a reason to retry or abandon otherwise valid assets.
 - Never hide extraction or alignment defects under stronger foil or bloom.
 - Do not split the character from the merged foreground in this workflow.

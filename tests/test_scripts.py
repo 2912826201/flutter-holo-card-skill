@@ -32,6 +32,8 @@ class ScriptTests(unittest.TestCase):
             (root / "alignment-overlay.png").write_bytes(b"temporary")
             (root / "foreground-bridge-mask.png").write_bytes(b"temporary")
             (root / "foreground-bridge-overlay.png").write_bytes(b"temporary")
+            (root / "character-region-mask.png").write_bytes(b"temporary")
+            (root / "structure-local.png").write_bytes(b"temporary")
             (root / "notes-owned-by-user.txt").write_text("keep", encoding="utf-8")
 
             cleaned = subprocess.run(
@@ -52,6 +54,8 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse((root / "alignment-overlay.png").exists())
             self.assertFalse((root / "foreground-bridge-mask.png").exists())
             self.assertFalse((root / "foreground-bridge-overlay.png").exists())
+            self.assertFalse((root / "character-region-mask.png").exists())
+            self.assertFalse((root / "structure-local.png").exists())
             self.assertTrue((root / "notes-owned-by-user.txt").is_file())
             for name in final_names:
                 self.assertTrue((root / name).is_file())
@@ -176,6 +180,97 @@ class ScriptTests(unittest.TestCase):
             self.assertGreater(report["occlusion_coverage"], 0.1)
             self.assertTrue(output.is_file())
             self.assertTrue(overlay.is_file())
+
+    def test_local_structure_extracts_only_reviewed_visible_pixels(self) -> None:
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            self.skipTest("opencv-python-headless is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            foreground = root / "foreground.png"
+            character_mask = root / "character-region-mask.png"
+            mask_overlay = root / "character-region-overlay.png"
+            occlusion = root / "occlusion.png"
+            structure = root / "structure-local.png"
+            structure_overlay = root / "structure-local-overlay.png"
+
+            source_image = Image.new("RGBA", (120, 160), (215, 220, 225, 255))
+            source_draw = ImageDraw.Draw(source_image)
+            source_draw.rectangle((0, 0, 119, 28), fill=(25, 25, 25, 255))
+            source_draw.ellipse((24, 34, 98, 142), fill=(170, 55, 115, 255))
+            source_draw.ellipse((43, 58, 78, 96), outline=(30, 20, 30, 255), width=4)
+            source_draw.line((38, 112, 86, 126), fill=(245, 235, 245, 255), width=4)
+            source_image.save(source)
+
+            foreground_image = source_image.copy()
+            foreground_alpha = Image.new("L", source_image.size, 0)
+            foreground_draw = ImageDraw.Draw(foreground_alpha)
+            foreground_draw.rectangle((0, 0, 119, 28), fill=255)
+            foreground_draw.ellipse((24, 34, 98, 142), fill=255)
+            foreground_image.putalpha(foreground_alpha)
+            foreground_image.save(foreground)
+
+            mask_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_local_character_mask.py"),
+                    "--reference",
+                    str(source),
+                    "--foreground",
+                    str(foreground),
+                    "--include-rect",
+                    "18,30,104,148",
+                    "--output-mask",
+                    str(character_mask),
+                    "--output-overlay",
+                    str(mask_overlay),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertTrue(json.loads(mask_result.stdout)["ok"])
+
+            occlusion_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(occlusion_image).rectangle((0, 0, 119, 30), fill=255)
+            occlusion_image.save(occlusion)
+
+            extracted = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "extract_local_structure.py"),
+                    "--source",
+                    str(source),
+                    "--foreground",
+                    str(foreground),
+                    "--character-mask",
+                    str(character_mask),
+                    "--occlusion-mask",
+                    str(occlusion),
+                    "--output-structure",
+                    str(structure),
+                    "--output-overlay",
+                    str(structure_overlay),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(extracted.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(report["method"], "local_pixel_edges")
+            self.assertFalse(report["image_generation_used"])
+            self.assertTrue(report["native_pixel_alignment"])
+            self.assertTrue(report["occlusion_applied"])
+            structure_image = Image.open(structure).convert("L")
+            self.assertIsNotNone(structure_image.getbbox())
+            self.assertEqual(structure_image.crop((0, 0, 120, 31)).getextrema()[1], 0)
+            self.assertGreater(structure_image.crop((20, 32, 105, 148)).getextrema()[1], 0)
+            self.assertTrue(mask_overlay.is_file())
+            self.assertTrue(structure_overlay.is_file())
 
     def test_normalize_source_preserves_aspect_without_crop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
