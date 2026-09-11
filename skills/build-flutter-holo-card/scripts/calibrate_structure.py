@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Estimate and apply a safe global affine registration for semantic line art."""
+"""Estimate and apply a safe global affine registration for generated line art."""
 
 from __future__ import annotations
 

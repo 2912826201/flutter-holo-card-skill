@@ -6,9 +6,9 @@
 |---|---|---|
 | Source | Supplied card, normalized without cropping | Preserve source |
 | Background | Complete scenery only, including repaired concealed regions | Opaque inside the card boundary; exterior rounded corners may stay transparent |
-| Foreground | Original source pixels for character, typography, symbols, panels, credits, and frame; optionally one or more bounded source-pixel depth-lock patches | Transparent where scenery remains independently moving |
-| Structure | Actually visible character contours and selected form lines, white on black | Opaque black canvas |
-| Bloom | Near blur in R, wide blur in G, B=0 | Opaque |
+| Foreground | Original source pixels for opaque character, typography, symbols, credits, frame strokes, and opaque panels; low-frequency color field plus partial Alpha for actually translucent UI material; optionally one or more bounded source-pixel depth-lock patches | Transparent where scenery remains independently moving, including scenery visible through translucent UI material |
+| Structure | Model-generated smooth white sketch lines for the complete accepted foreground; neutral black when disabled | Opaque black canvas |
+| Bloom | Near blur in R, wide blur in G, B=0; neutral black when disabled | Opaque |
 
 The character and card interface intentionally share one runtime depth. A temporary subject or UI selection mask may be used while preparing resources, but do not expose another moving character layer.
 
@@ -24,11 +24,36 @@ Reject a result containing a faint subject, empty silhouette, text ghost, frame 
 
 Ask the image model for a full-color selection aid, not final artwork:
 
-> Keep the supplied full-card canvas, aspect ratio, framing, scale, silhouette, and overlap positions. Replace every scenery-only pixel with one flat saturated chroma green matte. Keep non-green all character pixels and every foreground card-interface region: header, title, rules text, symbols, panels, credits, logos, edge decorations, and complete frame. Keep dark ink, pale highlights, holes between limbs, and detached foreground marks correctly classified. Do not crop, recenter, rotate, reconstruct hidden anatomy, or leave scenery islands inside foreground regions.
+> Keep the supplied full-card canvas, aspect ratio, framing, scale, silhouette, and overlap positions. Replace every scenery-only pixel with one flat saturated chroma green matte. Keep non-green all character pixels and every foreground card-interface region: header, title, rules text, symbols, panel material, credits, logos, edge decorations, and complete frame material, whether that material is opaque or translucent. When the source visibly places text on an opaque colored, textured, or framed panel, keep that complete panel non-green together with its text; never retain only the glyphs and replace their original opaque panel with green. When source text is intentionally printed directly over artwork with no backing, preserve that relationship and do not create a new panel. Keep dark ink, pale highlights, holes between limbs, and detached foreground marks correctly classified. Do not crop, recenter, rotate, reconstruct hidden anatomy, or leave scenery islands inside foreground regions. If any retained frame or panel is translucent, use this chroma result as the presence plate for the three-state workflow below instead of treating its Alpha as final.
 
-The model may repaint retained colors or spell glyphs incorrectly. That is acceptable in this temporary plate because only the green/non-green semantic boundary is consumed. It is not acceptable for the model to move a silhouette, omit a visible element, merge a scenery hole, or retain a scenery island.
+The model may repaint retained colors or spell glyphs incorrectly. That is acceptable in this temporary plate because only the green/non-green semantic boundary is consumed. It is not acceptable for the model to move a silhouette, omit a visible element, merge a scenery hole, retain a scenery island, or classify glyphs as foreground while turning an opaque source-visible supporting panel green. It is equally wrong to invent a new panel behind text that has no backing in the source.
 
 Run `prepare_foreground.py`. It converts chroma green to alpha and copies all RGB from the normalized source. Inspect the temporary `foreground-on-black.png`, `foreground-on-white.png`, and `foreground-alignment-overlay.png`. Require `source_rgb_preserved: true` in `foreground-report.json`, then remove these intermediates during final cleanup.
+
+## Translucent frames and information panels
+
+Use this branch only when the source visibly shows scenery through a transparent or translucent frame, glass panel, foil panel, or information backing. Do not mistake a merely textured opaque panel for transparency. If the classification is uncertain, preserve the visible source relationship for review instead of assigning the scenery to the frame.
+
+Generate one flat three-state opacity plate at the exact source canvas:
+
+> Produce a strictly registered three-tone foreground-opacity plate on the complete source canvas. Use pure black for independently moving scenery, including every scenery pixel visibly seen through a transparent frame or translucent information panel. Use uniform middle gray (#808080) only for the translucent UI material itself. Use pure white for opaque foreground pixels: the character, opaque effects, typography, symbols, logos, credits, opaque panel parts, and opaque frame strokes. When text sits on an opaque panel, make both white. When text has no backing, keep the text white and its surrounding scenery black. When text sits on translucent material, make the text and opaque strokes white, the material gray, and the scenery visible through it black. Preserve exact canvas, positions, silhouettes, overlaps, and layer order. Do not copy scenery colors into the mask, invent panels, flatten transparent material to white, or use gradients, shading, glow, texture, color, crop, or recentering.
+
+Run:
+
+```bash
+python scripts/prepare_foreground.py \
+  --source source.png \
+  --opacity-selection foreground-opacity-selection.png \
+  --presence-selection foreground-selection.png \
+  --output-foreground foreground.png \
+  --output-mask foreground-alpha.png \
+  --output-black-preview foreground-on-black.png \
+  --output-white-preview foreground-on-white.png \
+  --output-overlay foreground-alignment-overlay.png \
+  --output-report foreground-report.json
+```
+
+The chroma presence plate remains authoritative for whether a source pixel belongs to foreground, so black character ink, dark text strokes, and effect linework cannot become transparent merely because the three-state model rendered them black. Within that foreground, the script quantizes mid-gray to Alpha 144 and keeps all other present pixels opaque before edge feathering. Opaque RGB comes exactly from `source.png`; inside mid-gray material it replaces scene-contaminated detail with a normalized low-frequency color field sampled only from that material class. Tune `--translucent-alpha` only when the source clearly indicates a different material opacity, and tune `--material-color-radius` only when background motifs remain in the translucent tint. Require `selection_mode: three_state_opacity`, `presence_selection_used: true`, non-zero `translucent_material_coverage`, `opaque_source_rgb_preserved: true`, and `translucent_rgb_decontaminated: true`. Full-image `source_rgb_preserved` is expected to be false only because partial-alpha material was cleaned. Compare black and white previews: scenery must remain visible through the material, opaque text and dark linework must not fade, and no background motif may move with the frame or panel.
 
 ## Ambiguous enclosed scenery pockets
 
@@ -38,65 +63,38 @@ Use `bridge_foreground.py` with a seed inside the reviewed transparent pocket. T
 
 Do not use a depth-lock patch when the component opens into the main scenery, when a boundary would cut through a salient background shape, or when the total patch is large enough to erase useful depth. In those cases regenerate the selection plate. Never synthesize or repaint the subject for this correction.
 
-## Visible-only structure prompt
+## Full-foreground sketch highlight
 
-Generate from the accepted foreground or a temporary character-only view at the identical canvas:
+Use the accepted transparent `foreground.png` as the edit target. Generate one complete line-style transformation rather than asking the model to identify, isolate, or reconstruct a character:
 
-> Create a strictly registered semantic character structure map. Keep the exact full-card canvas, aspect ratio, framing, scale, pose, and pixel positions. On pure black, draw clean thin continuous white antialiased lines only for character segments actually visible in the accepted foreground: visible silhouette, face and eyes, hair, hands and fingers, clothing seams, and meaningful folds. Wherever text, a panel, symbol, border, frame, logo, or other foreground graphic covers the character, leave those covered pixels pure black and stop the line at the visible occlusion edge. Do not reconstruct hidden anatomy. Do not trace typography, panels, frame, scenery, stars, foil texture, print noise, shading, or halftone. No filled regions, gray shading, color, or glow.
+> Transform all visible non-transparent foreground content into a pure luminous line drawing. Trace the whole foreground, including the visible subject, energy effects, existing typography, numbers, symbols, information panels, logos, and decorative frame. Preserve the complete original canvas, aspect ratio, framing, scale, positions, overlaps, and transparent negative spaces. Use only thin, smooth, continuous white antialiased lines on a genuinely transparent background. Do not crop, recenter, rotate, stretch, rearrange, add content, complete concealed shapes, or reconstruct hidden anatomy. Do not use color, filled regions, gray shading, hatching, halftone, paper texture, glow blur, shadows, or a watermark.
 
-A comparison image may define line quality, but never copy it into project assets. Generate the structure from the current card.
+Generate this as a style transformation of the supplied foreground, not as hidden-content completion. A comparison image may define line quality, but never copy it into project assets.
 
-## Local contour fallback after a safety refusal
-
-When an image service refuses or safety-blocks semantic line-art generation, accept the refusal and switch paths. Do not retry with euphemisms, prompt obfuscation, or requests to reconstruct hidden anatomy. The fallback must use only local deterministic processing of accepted source pixels.
-
-First define a coarse visible-character scope on the normalized full canvas. Use one or more reviewed rectangles or polygons; subtract trainer portraits, text, panels, symbols, scenery, and frame regions. The shape need not trace the silhouette because the extractor also intersects it with the accepted foreground Alpha:
+Some image services display transparency correctly but save an opaque checkerboard in RGB. Normalize either form with the bundled script; it only removes the generated backdrop and never re-detects source-image edges:
 
 ```bash
-python scripts/prepare_local_character_mask.py \
-  --reference source.png \
+python scripts/prepare_generated_lineart.py \
+  --reference foreground.png \
+  --lineart structure-sketch-generated-raw.png \
+  --output-structure structure-generated.png \
+  --output-transparent structure-generated-transparent.png \
+  --output-report structure-generated-report.json
+```
+
+Inspect the transparent preview. Reject filled regions, shaded areas, broad glow, missing major foreground groups, invented elements, or local geometry changes. Text spelling inside this temporary highlight map is less important than edge registration because its RGB is never shown, but the line placement must still follow the source foreground.
+
+If the image service refuses, fails, or cannot produce a usable line drawing, do not retry with evasive wording and do not use local pixel-edge extraction. Continue the card without line emission by creating neutral maps:
+
+```bash
+python scripts/prepare_structure_maps.py \
   --foreground foreground.png \
-  --include-polygon "x1,y1;x2,y2;x3,y3" \
-  --exclude-rect x0,y0,x1,y1 \
-  --output-mask character-region-mask.png \
-  --output-overlay character-region-overlay.png \
-  --output-report character-region-report.json
+  --disable-contour \
+  --output-contour character_contour.png \
+  --output-bloom character_bloom.png
 ```
 
-Inspect the green overlay, then extract native source edges:
-
-```bash
-python scripts/extract_local_structure.py \
-  --source source.png \
-  --foreground foreground.png \
-  --character-mask character-region-mask.png \
-  --occlusion-mask ui-occlusion.png \
-  --output-structure structure-local.png \
-  --output-overlay structure-local-overlay.png \
-  --output-report structure-local-report.json
-```
-
-The extractor applies bilateral noise suppression, multi-channel Canny edges, tiny-component rejection, foreground-Alpha clipping, character-region clipping, and UI occlusion locally. It never calls an image model, invents lines, or reconstructs concealed content. Use `structure-local.png` directly with `prepare_structure_maps.py`; skip `calibrate_structure.py` because the local result is already pixel-aligned.
-
-Review the red overlay. Raise `--edge-quantile` when print grain or foil texture is too dense; lower it only when important visible source lines are missing. This fallback intentionally favors exact registration and policy reliability over semantic cleanliness. Reject it if local texture cannot be separated from meaningful visible structure without tracing UI or scenery.
-
-## Visible-pixel occlusion prompt
-
-Generate this after accepting the foreground. It is a temporary safety mask, not a runtime depth layer:
-
-> Produce a conservative black-and-white mask on the exact complete source canvas. White means a visible card-interface or non-character pixel that must block character contour light; black means an actually visible character pixel. Make the outer frame, typography, numbers, symbols, logos, credits, footer marks, solid information panels, and continuous safety ribbons around rules-text lines white. Visible character pixels take priority and stay black where the character overlaps the geometric bounds of a header, title panel, or border. Where text or a panel visibly covers the character, keep the covering region white and do not reconstruct the hidden character. Preserve the original canvas, scale, positions, and layer order. Use flat black and white only; no line art, scenery texture, gradients, glow, or transparency.
-
-Normalize it with:
-
-```bash
-python scripts/prepare_occlusion_mask.py \
-  --reference source.png \
-  --selection ui-occlusion-selection.png \
-  --output-mask ui-occlusion.png \
-  --output-overlay ui-occlusion-overlay.png
-```
-
-The white area may be wider than a text glyph but must not remove important visible character contours. Inspect the overlay before preparing bloom.
+The neutral files preserve the fixed five-asset runtime contract. Existing Flutter and Shader code can keep loading and sampling them; all contour and bloom samples evaluate to zero.
 
 Keep the accepted normalized original as `source.png`; it is the runtime fallback and static card-shape Alpha mask. All other source copies, selection plates, masks, depth-lock overlays, per-stage previews, alignment overlays, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave exactly `source.png` plus the four derived runtime images.
 
@@ -105,15 +103,13 @@ Keep the accepted normalized original as `source.png`; it is the runtime fallbac
 The source, foreground, structure, and bloom always occupy the same full canvas. Never align independently cropped bounding boxes.
 
 1. Create a red structure overlay on the foreground with `prepare_structure_maps.py --output-overlay`.
-2. Check eyes, fingers, face outline, long outer silhouettes, and UI crossings.
-3. Run `calibrate_structure.py` to estimate a safe full-canvas affine from generated semantic lines to original source edges. Record its six forward coefficients and correlation report.
-4. Prefer rejection and regeneration when the model changes anatomy. Automatic or manual affine is only for uniform framing drift.
-5. Apply the visible-pixel occlusion mask after registration so transformed lines cannot move onto text, panels, scenery, or frame pixels.
-
-An occlusion mask is a full-canvas grayscale image: `255` blocks contour emission and `0` permits it. Keep a safety margin around small text when exact per-glyph masking is unreliable.
+2. Check the subject silhouette, energy effects, typography, panels, and long frame runs.
+3. Run `calibrate_structure.py` to estimate one safe full-canvas affine from the generated sketch to original source edges. Record its six forward coefficients and correlation report.
+4. Prefer rejection and regeneration when local geometry changes. Automatic or manual affine is only for uniform framing drift.
+5. Do not apply a UI occlusion mask: UI, text, panels, effects, and frame are intentionally part of this highlight layer.
 
 ## Map preparation
 
-`prepare_structure_maps.py` performs full-canvas normalization, optional affine registration, foreground-alpha clipping, optional UI occlusion, and two-scale bloom generation. It deliberately does not discover anatomy, infer an occlusion mask, or auto-fit bounding boxes.
+`prepare_structure_maps.py` performs full-canvas normalization, optional affine registration, foreground-alpha clipping, and two-scale bloom generation. With `--disable-contour`, it emits matching neutral-black contour and bloom maps instead.
 
 For a 1000 px wide canvas, start with near radius `7` and wide radius `20`; the script scales both radii with canvas width. The contour file stays RGB-equivalent black/white. The bloom file stores near/wide luminance in R/G for two sampler-friendly scales.

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 
+import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 
@@ -29,11 +30,15 @@ class ScriptTests(unittest.TestCase):
                 (root / name).write_bytes(b"final")
             (root / "background-generated.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
+            (root / "foreground-opacity-selection.png").write_bytes(b"temporary")
             (root / "alignment-overlay.png").write_bytes(b"temporary")
             (root / "foreground-bridge-mask.png").write_bytes(b"temporary")
             (root / "foreground-bridge-overlay.png").write_bytes(b"temporary")
             (root / "character-region-mask.png").write_bytes(b"temporary")
             (root / "structure-local.png").write_bytes(b"temporary")
+            (root / "structure-sketch-generated-raw.png").write_bytes(b"temporary")
+            (root / "structure-generated-transparent.png").write_bytes(b"temporary")
+            (root / "structure-generated-report.json").write_bytes(b"temporary")
             (root / "notes-owned-by-user.txt").write_text("keep", encoding="utf-8")
 
             cleaned = subprocess.run(
@@ -51,11 +56,15 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["ok"])
             self.assertFalse((root / "background-generated.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
+            self.assertFalse((root / "foreground-opacity-selection.png").exists())
             self.assertFalse((root / "alignment-overlay.png").exists())
             self.assertFalse((root / "foreground-bridge-mask.png").exists())
             self.assertFalse((root / "foreground-bridge-overlay.png").exists())
             self.assertFalse((root / "character-region-mask.png").exists())
             self.assertFalse((root / "structure-local.png").exists())
+            self.assertFalse((root / "structure-sketch-generated-raw.png").exists())
+            self.assertFalse((root / "structure-generated-transparent.png").exists())
+            self.assertFalse((root / "structure-generated-report.json").exists())
             self.assertTrue((root / "notes-owned-by-user.txt").is_file())
             for name in final_names:
                 self.assertTrue((root / name).is_file())
@@ -144,31 +153,36 @@ class ScriptTests(unittest.TestCase):
             self.assertLess(after, before)
             self.assertTrue(report_path.is_file())
 
-    def test_prepare_occlusion_mask_expands_ui_safely(self) -> None:
+    def test_prepare_generated_lineart_removes_baked_checkerboard(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference = root / "reference.png"
-            selection = root / "selection.png"
-            output = root / "occlusion.png"
-            overlay = root / "overlay.png"
-            Image.new("RGBA", (100, 140), (80, 100, 120, 255)).save(reference)
-            selection_image = Image.new("L", (200, 280), 0)
-            ImageDraw.Draw(selection_image).rectangle((20, 20, 180, 45), fill=255)
-            ImageDraw.Draw(selection_image).rectangle((35, 220, 165, 265), fill=255)
-            selection_image.save(selection)
+            lineart = root / "lineart.png"
+            structure = root / "structure.png"
+            transparent = root / "transparent.png"
+
+            Image.new("RGBA", (100, 140), (60, 80, 100, 255)).save(reference)
+            generated = Image.new("RGB", (110, 154), (140, 140, 140))
+            draw = ImageDraw.Draw(generated)
+            for y in range(0, 154, 12):
+                for x in range(0, 110, 12):
+                    if (x // 12 + y // 12) % 2:
+                        draw.rectangle((x, y, x + 11, y + 11), fill=(190, 190, 190))
+            draw.line((20, 20, 90, 134), fill=(255, 255, 255), width=5)
+            generated.save(lineart)
 
             prepared = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS / "prepare_occlusion_mask.py"),
+                    str(SCRIPTS / "prepare_generated_lineart.py"),
                     "--reference",
                     str(reference),
-                    "--selection",
-                    str(selection),
-                    "--output-mask",
-                    str(output),
-                    "--output-overlay",
-                    str(overlay),
+                    "--lineart",
+                    str(lineart),
+                    "--output-structure",
+                    str(structure),
+                    "--output-transparent",
+                    str(transparent),
                 ],
                 check=True,
                 capture_output=True,
@@ -176,101 +190,81 @@ class ScriptTests(unittest.TestCase):
             )
             report = json.loads(prepared.stdout)
             self.assertTrue(report["ok"])
-            self.assertEqual(report["canvas"], [100, 140])
-            self.assertGreater(report["occlusion_coverage"], 0.1)
-            self.assertTrue(output.is_file())
-            self.assertTrue(overlay.is_file())
+            self.assertTrue(report["opaque_background_removed"])
+            self.assertTrue(report["resized_to_reference"])
+            structure_image = Image.open(structure).convert("L")
+            self.assertEqual(structure_image.size, (100, 140))
+            self.assertEqual(structure_image.getpixel((3, 3)), 0)
+            self.assertGreater(structure_image.getextrema()[1], 240)
+            transparent_image = Image.open(transparent).convert("RGBA")
+            self.assertEqual(
+                transparent_image.getchannel("A").getbbox(),
+                structure_image.getbbox(),
+            )
+            self.assertEqual(transparent_image.getchannel("R").getextrema(), (255, 255))
 
-    def test_local_structure_extracts_only_reviewed_visible_pixels(self) -> None:
-        try:
-            import cv2  # noqa: F401
-        except ImportError:
-            self.skipTest("opencv-python-headless is not installed")
-
+    def test_disabled_contour_keeps_five_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
+            background = root / "background.png"
             foreground = root / "foreground.png"
-            character_mask = root / "character-region-mask.png"
-            mask_overlay = root / "character-region-overlay.png"
-            occlusion = root / "occlusion.png"
-            structure = root / "structure-local.png"
-            structure_overlay = root / "structure-local-overlay.png"
+            contour = root / "character_contour.png"
+            bloom = root / "character_bloom.png"
 
-            source_image = Image.new("RGBA", (120, 160), (215, 220, 225, 255))
-            source_draw = ImageDraw.Draw(source_image)
-            source_draw.rectangle((0, 0, 119, 28), fill=(25, 25, 25, 255))
-            source_draw.ellipse((24, 34, 98, 142), fill=(170, 55, 115, 255))
-            source_draw.ellipse((43, 58, 78, 96), outline=(30, 20, 30, 255), width=4)
-            source_draw.line((38, 112, 86, 126), fill=(245, 235, 245, 255), width=4)
+            source_image = Image.new("RGBA", (100, 140), (80, 100, 120, 255))
             source_image.save(source)
-
+            source_image.save(background)
             foreground_image = source_image.copy()
-            foreground_alpha = Image.new("L", source_image.size, 0)
-            foreground_draw = ImageDraw.Draw(foreground_alpha)
-            foreground_draw.rectangle((0, 0, 119, 28), fill=255)
-            foreground_draw.ellipse((24, 34, 98, 142), fill=255)
+            foreground_alpha = Image.new("L", source_image.size, 255)
+            ImageDraw.Draw(foreground_alpha).rectangle((35, 35, 65, 105), fill=0)
             foreground_image.putalpha(foreground_alpha)
             foreground_image.save(foreground)
 
-            mask_result = subprocess.run(
+            prepared = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS / "prepare_local_character_mask.py"),
-                    "--reference",
-                    str(source),
+                    str(SCRIPTS / "prepare_structure_maps.py"),
                     "--foreground",
                     str(foreground),
-                    "--include-rect",
-                    "18,30,104,148",
-                    "--output-mask",
-                    str(character_mask),
-                    "--output-overlay",
-                    str(mask_overlay),
+                    "--disable-contour",
+                    "--output-contour",
+                    str(contour),
+                    "--output-bloom",
+                    str(bloom),
                 ],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            self.assertTrue(json.loads(mask_result.stdout)["ok"])
+            prepare_report = json.loads(prepared.stdout)
+            self.assertFalse(prepare_report["contour_enabled"])
+            self.assertEqual(prepare_report["strong_line_coverage"], 0.0)
+            self.assertIsNone(Image.open(contour).convert("RGB").getbbox())
+            self.assertIsNone(Image.open(bloom).convert("RGB").getbbox())
 
-            occlusion_image = Image.new("L", source_image.size, 0)
-            ImageDraw.Draw(occlusion_image).rectangle((0, 0, 119, 30), fill=255)
-            occlusion_image.save(occlusion)
-
-            extracted = subprocess.run(
+            checked = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS / "extract_local_structure.py"),
+                    str(SCRIPTS / "check_assets.py"),
                     "--source",
                     str(source),
+                    "--background",
+                    str(background),
                     "--foreground",
                     str(foreground),
-                    "--character-mask",
-                    str(character_mask),
-                    "--occlusion-mask",
-                    str(occlusion),
-                    "--output-structure",
-                    str(structure),
-                    "--output-overlay",
-                    str(structure_overlay),
+                    "--contour",
+                    str(contour),
+                    "--bloom",
+                    str(bloom),
                 ],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            report = json.loads(extracted.stdout)
-            self.assertTrue(report["ok"])
-            self.assertEqual(report["method"], "local_pixel_edges")
-            self.assertFalse(report["image_generation_used"])
-            self.assertTrue(report["native_pixel_alignment"])
-            self.assertTrue(report["occlusion_applied"])
-            structure_image = Image.open(structure).convert("L")
-            self.assertIsNotNone(structure_image.getbbox())
-            self.assertEqual(structure_image.crop((0, 0, 120, 31)).getextrema()[1], 0)
-            self.assertGreater(structure_image.crop((20, 32, 105, 148)).getextrema()[1], 0)
-            self.assertTrue(mask_overlay.is_file())
-            self.assertTrue(structure_overlay.is_file())
+            check_report = json.loads(checked.stdout)
+            self.assertTrue(check_report["ok"])
+            self.assertFalse(check_report["contour_enabled"])
 
     def test_normalize_source_preserves_aspect_without_crop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -365,6 +359,147 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(black_preview.is_file())
             self.assertTrue(white_preview.is_file())
             self.assertTrue(overlay.is_file())
+
+    def test_prepare_foreground_preserves_translucent_panel_depth(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            selection = root / "opacity-selection.png"
+            presence = root / "presence-selection.png"
+            foreground = root / "foreground.png"
+            report_path = root / "report.json"
+
+            source_image = Image.new("RGBA", (100, 140), (28, 65, 110, 255))
+            source_draw = ImageDraw.Draw(source_image)
+            source_draw.ellipse((20, 18, 78, 92), fill=(205, 75, 145, 255))
+            source_draw.rectangle((8, 98, 92, 132), fill=(120, 155, 205, 255))
+            for x in range(10, 91, 8):
+                source_draw.rectangle(
+                    (x, 99, min(x + 3, 92), 131),
+                    fill=(55, 95, 145, 255),
+                )
+            source_draw.line((18, 112, 82, 112), fill=(245, 245, 245, 255), width=3)
+            source_image.save(source)
+
+            opacity = Image.new("L", source_image.size, 0)
+            opacity_draw = ImageDraw.Draw(opacity)
+            opacity_draw.ellipse((20, 18, 78, 92), fill=255)
+            opacity_draw.rectangle((8, 98, 92, 132), fill=128)
+            opacity_draw.line((18, 112, 82, 112), fill=255, width=3)
+            opacity.save(selection)
+
+            presence_image = Image.new("RGB", source_image.size, (0, 255, 0))
+            presence_draw = ImageDraw.Draw(presence_image)
+            presence_draw.ellipse((20, 18, 78, 92), fill=(205, 75, 145))
+            presence_draw.rectangle((8, 98, 92, 132), fill=(120, 155, 205))
+            presence_draw.line((18, 112, 82, 112), fill=(245, 245, 245), width=3)
+            presence_image.save(presence)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--opacity-selection",
+                    str(selection),
+                    "--presence-selection",
+                    str(presence),
+                    "--output-foreground",
+                    str(foreground),
+                    "--output-report",
+                    str(report_path),
+                    "--feather-radius",
+                    "0",
+                    "--translucent-alpha",
+                    "144",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(report["selection_mode"], "three_state_opacity")
+            self.assertTrue(report["presence_selection_used"])
+            self.assertGreater(report["translucent_material_coverage"], 0.1)
+            self.assertEqual(report["translucent_alpha"], 144)
+            self.assertFalse(report["source_rgb_preserved"])
+            self.assertTrue(report["opaque_source_rgb_preserved"])
+            self.assertTrue(report["translucent_rgb_decontaminated"])
+
+            output = Image.open(foreground).convert("RGBA")
+            self.assertEqual(output.getpixel((2, 70))[3], 0)
+            self.assertEqual(output.getpixel((12, 102))[3], 144)
+            self.assertEqual(output.getpixel((50, 112))[3], 255)
+            self.assertEqual(output.getpixel((50, 50))[3], 255)
+            self.assertEqual(
+                source_image.convert("RGBA").getpixel((50, 50))[:3],
+                output.getpixel((50, 50))[:3],
+            )
+            self.assertNotEqual(
+                source_image.convert("RGBA").getpixel((12, 102))[:3],
+                output.getpixel((12, 102))[:3],
+            )
+            self.assertTrue(report_path.is_file())
+
+    def test_check_assets_allows_translucent_material_color_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            background = root / "background.png"
+            foreground = root / "foreground.png"
+            contour = root / "contour.png"
+            bloom = root / "bloom.png"
+
+            source_image = Image.new("RGBA", (40, 56), (20, 40, 60, 255))
+            source_image.save(source)
+            source_image.save(background)
+
+            source_pixels = np.asarray(source_image, dtype=np.uint8)
+            foreground_pixels = source_pixels.copy()
+            foreground_pixels[..., 3] = 0
+            foreground_pixels[12:45, 8:32, 3] = 144
+            foreground_pixels[20:38, 14:26, :3] = (70, 90, 130)
+            foreground_pixels[23:32, 18:22, :3] = source_pixels[23:32, 18:22, :3]
+            foreground_pixels[23:32, 18:22, 3] = 255
+            Image.fromarray(foreground_pixels, mode="RGBA").save(foreground)
+
+            contour_image = Image.new("RGBA", source_image.size, (0, 0, 0, 255))
+            ImageDraw.Draw(contour_image).line(
+                (18, 23, 21, 31), fill=(255, 255, 255, 255), width=1
+            )
+            contour_image.save(contour)
+            bloom_image = Image.new("RGBA", source_image.size, (0, 0, 0, 255))
+            ImageDraw.Draw(bloom_image).line(
+                (18, 23, 21, 31), fill=(180, 90, 0, 255), width=3
+            )
+            bloom_image.save(bloom)
+
+            checked = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "check_assets.py"),
+                    "--source",
+                    str(source),
+                    "--background",
+                    str(background),
+                    "--foreground",
+                    str(foreground),
+                    "--contour",
+                    str(contour),
+                    "--bloom",
+                    str(bloom),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(checked.stdout)
+            self.assertTrue(report["ok"])
+            self.assertFalse(report["source_rgb_preserved"])
+            self.assertTrue(report["opaque_source_rgb_preserved"])
+            self.assertTrue(report["required_visual_review"])
 
     def test_bridge_foreground_locks_enclosed_source_pixel_pocket(self) -> None:
         try:
@@ -603,7 +738,8 @@ class ScriptTests(unittest.TestCase):
             report = json.loads(checked.stdout)
             self.assertFalse(report["source_rgb_preserved"])
             self.assertIn(
-                "Foreground RGB differs from the normalized source", report["errors"]
+                "Opaque foreground RGB differs from the normalized source",
+                report["errors"],
             )
 
     def test_prepare_rejects_different_aspect_ratio(self) -> None:

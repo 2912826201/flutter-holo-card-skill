@@ -2,7 +2,7 @@
 
 ## Layer order and UVs
 
-Render `background -> merged foreground -> view-dependent material and contour emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and contour emission only where the visible structure and foreground alpha overlap. The foreground already contains character, typography, panels, and frame; the structure map stays black beneath its non-character UI pixels.
+Render `background -> merged foreground -> view-dependent material and sketch-line emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and line emission only where the full-foreground sketch and foreground alpha overlap. The foreground and sketch both contain the subject, effects, typography, panels, symbols, and frame at one signed depth.
 
 Load the supplied source card as a fifth static sampler and use only its Alpha as the final card-shape mask. The repaired background is intentionally opaque for parallax sampling and must never define the outer silhouette. Multiply the final premultiplied color and Alpha by the static source mask so the background, shifted foreground, foil, glare, stars, contour, and bloom all share the exact antialiased card corners.
 
@@ -40,6 +40,8 @@ With screen Y increasing downward, positive X and Y coefficients produce constan
 
 The contour sampler contains only white line core. The bloom sampler contains near blur in R and wide blur in G.
 
+When line generation is unavailable, both files are opaque neutral-black maps. Keep loading and sampling them normally; they disable emission without a shader branch or a different resource contract.
+
 ```glsl
 float line = structure * foregroundAlpha;
 float envelope = smoothstep(0.025, 0.42, light);
@@ -49,7 +51,7 @@ vec3 bloom = emissionColor * (nearBloom * 0.55 + wideBloom * 0.8)
   * line * envelope * power * 40.0 * contourStrength;
 ```
 
-Multiplying blurred bloom by `line` is intentional: it prevents halo spill into scenery, flat subject interiors, text, and frame pixels.
+Multiplying blurred bloom by `line` is intentional: it keeps the strong emission confined to generated foreground strokes instead of washing across scenery or flat interiors.
 
 Compose in linear space and apply exponential display mapping after emission and bloom:
 

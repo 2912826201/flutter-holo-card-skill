@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageChops, ImageOps, ImageStat
 
 
@@ -64,24 +65,31 @@ def main() -> int:
         errors.append("Foreground has no transparent scenery region")
 
     source_rgb_preserved = None
+    opaque_source_rgb_preserved = None
     if args.source:
         source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
         if source.size != foreground.size:
             errors.append("Source canvas differs from foreground")
             source_rgb_preserved = False
         else:
-            source_red, source_green, source_blue, _ = source.split()
-            foreground_red, foreground_green, foreground_blue, _ = foreground.split()
-            source_rgb_preserved = not any(
-                ImageChops.difference(source_channel, foreground_channel).getbbox()
-                for source_channel, foreground_channel in (
-                    (source_red, foreground_red),
-                    (source_green, foreground_green),
-                    (source_blue, foreground_blue),
-                )
+            source_pixels = np.asarray(source, dtype=np.uint8)
+            foreground_pixels = np.asarray(foreground, dtype=np.uint8)
+            rgb_mismatch = np.any(
+                source_pixels[..., :3] != foreground_pixels[..., :3], axis=2
             )
-            if not source_rgb_preserved:
-                errors.append("Foreground RGB differs from the normalized source")
+            source_rgb_preserved = not bool(rgb_mismatch.any())
+            opaque_pixels = foreground_pixels[..., 3] >= 250
+            opaque_source_rgb_preserved = not bool(
+                np.logical_and(rgb_mismatch, opaque_pixels).any()
+            )
+            if not opaque_source_rgb_preserved:
+                errors.append(
+                    "Opaque foreground RGB differs from the normalized source"
+                )
+            elif not source_rgb_preserved:
+                warnings.append(
+                    "Translucent foreground RGB differs from source; confirm it is intentional material-color decontamination"
+                )
 
     red, green, blue, contour_alpha = contour.split()
     if ImageChops.difference(red, green).getbbox() or ImageChops.difference(
@@ -91,12 +99,19 @@ def main() -> int:
     if contour_alpha.getextrema() != (255, 255):
         errors.append("Contour canvas must be opaque")
     line_coverage = coverage(red)
-    if line_coverage <= 0.0001:
-        errors.append("Contour is empty")
-    elif line_coverage >= 0.2:
-        errors.append("Contour coverage is too dense for selected semantic lines")
+    contour_enabled = red.getextrema()[1] > 1
+    if contour_enabled and line_coverage <= 0.0001:
+        errors.append("Contour signal is present but effectively empty")
+    elif line_coverage >= 0.35:
+        errors.append("Contour coverage is too dense for a foreground highlight map")
 
-    _, _, bloom_blue, bloom_alpha = bloom.split()
+    bloom_red, bloom_green, bloom_blue, bloom_alpha = bloom.split()
+    bloom_enabled = max(
+        bloom_red.getextrema()[1],
+        bloom_green.getextrema()[1],
+    ) > 1
+    if contour_enabled != bloom_enabled:
+        errors.append("Contour and bloom enabled states do not match")
     if ImageStat.Stat(bloom_blue).extrema[0][1] > 1:
         errors.append("Bloom B channel must remain zero")
     if bloom_alpha.getextrema() != (255, 255):
@@ -115,15 +130,24 @@ def main() -> int:
         [
             "Visually confirm that the background contains no subject, text, or frame residue.",
             "Visually confirm original foreground RGB and lettering over black and white.",
-            "Inspect the red contour overlay for eyes, hands, silhouette, text, and frame alignment.",
         ]
     )
+    if contour_enabled:
+        warnings.append(
+            "Inspect the red contour overlay for full-foreground line registration."
+        )
+    else:
+        warnings.append(
+            "Contour and bloom are neutral black maps; line emission is intentionally disabled."
+        )
     report = {
         "ok": not errors,
         "canvas": list(foreground.size),
         "background_coverage": round(background_coverage, 6),
         "foreground_coverage": round(foreground_coverage, 6),
         "source_rgb_preserved": source_rgb_preserved,
+        "opaque_source_rgb_preserved": opaque_source_rgb_preserved,
+        "contour_enabled": contour_enabled,
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
         "required_visual_review": warnings,

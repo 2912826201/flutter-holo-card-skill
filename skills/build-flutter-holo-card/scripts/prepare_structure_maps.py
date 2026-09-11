@@ -65,7 +65,8 @@ def save_overlay(foreground: Image.Image, core: Image.Image, output: Path) -> No
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--foreground", required=True, type=Path)
-    parser.add_argument("--structure", required=True, type=Path)
+    parser.add_argument("--structure", type=Path)
+    parser.add_argument("--disable-contour", action="store_true")
     parser.add_argument("--output-contour", required=True, type=Path)
     parser.add_argument("--output-bloom", required=True, type=Path)
     parser.add_argument("--output-overlay", type=Path)
@@ -75,32 +76,42 @@ def main() -> int:
     parser.add_argument("--wide-radius", type=float, default=20.0)
     args = parser.parse_args()
 
+    if args.disable_contour and args.structure:
+        raise ValueError("Do not provide --structure with --disable-contour")
+    if not args.disable_contour and not args.structure:
+        raise ValueError("Provide --structure or use --disable-contour")
+    if args.disable_contour and args.forward_affine:
+        raise ValueError("Do not provide --forward-affine with --disable-contour")
+
     foreground = ImageOps.exif_transpose(Image.open(args.foreground)).convert("RGBA")
     canvas = foreground.size
-    structure = ImageOps.exif_transpose(Image.open(args.structure)).convert("L")
-    structure = resize_full_canvas(structure, canvas, "Structure")
+    if args.disable_contour:
+        core = Image.new("L", canvas, 0)
+    else:
+        structure = ImageOps.exif_transpose(Image.open(args.structure)).convert("L")
+        structure = resize_full_canvas(structure, canvas, "Structure")
 
-    if args.forward_affine:
-        structure = structure.transform(
-            canvas,
-            Image.Transform.AFFINE,
-            inverse_affine(args.forward_affine),
-            resample=Image.Resampling.BICUBIC,
-            fillcolor=0,
-        )
+        if args.forward_affine:
+            structure = structure.transform(
+                canvas,
+                Image.Transform.AFFINE,
+                inverse_affine(args.forward_affine),
+                resample=Image.Resampling.BICUBIC,
+                fillcolor=0,
+            )
 
-    core = normalize_structure(structure)
-    core = ImageChops.multiply(core, foreground.getchannel("A"))
+        core = normalize_structure(structure)
+        core = ImageChops.multiply(core, foreground.getchannel("A"))
 
-    if args.occlusion_mask:
-        occlusion = ImageOps.exif_transpose(Image.open(args.occlusion_mask)).convert(
-            "L"
-        )
-        occlusion = resize_full_canvas(occlusion, canvas, "Occlusion mask")
-        core = ImageChops.multiply(core, ImageOps.invert(occlusion))
+        if args.occlusion_mask:
+            occlusion = ImageOps.exif_transpose(Image.open(args.occlusion_mask)).convert(
+                "L"
+            )
+            occlusion = resize_full_canvas(occlusion, canvas, "Occlusion mask")
+            core = ImageChops.multiply(core, ImageOps.invert(occlusion))
 
-    if not core.getbbox():
-        raise ValueError("Prepared structure is empty")
+        if not core.getbbox():
+            raise ValueError("Prepared structure is empty")
 
     args.output_contour.parent.mkdir(parents=True, exist_ok=True)
     args.output_bloom.parent.mkdir(parents=True, exist_ok=True)
@@ -123,9 +134,14 @@ def main() -> int:
         json.dumps(
             {
                 "canvas": list(canvas),
+                "contour_enabled": not args.disable_contour,
                 "strong_line_coverage": round(strong, 6),
-                "affine_applied": args.forward_affine is not None,
-                "occlusion_applied": args.occlusion_mask is not None,
+                "affine_applied": (
+                    not args.disable_contour and args.forward_affine is not None
+                ),
+                "occlusion_applied": (
+                    not args.disable_contour and args.occlusion_mask is not None
+                ),
             },
             indent=2,
         )
