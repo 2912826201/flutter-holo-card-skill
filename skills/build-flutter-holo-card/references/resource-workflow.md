@@ -7,7 +7,7 @@
 | Source | Supplied card, normalized without cropping | Preserve source |
 | Background | Complete scenery only, including repaired concealed regions | Opaque inside the card boundary; exterior rounded corners may stay transparent |
 | Foreground | Original source pixels for the fully opaque main subject, subject-linked visual elements, the subject-specific frame, card interface, and card frame; low-frequency color field plus partial Alpha only for actually translucent non-subject material | Transparent where unrelated scenery remains independently moving, including scenery visible through translucent UI material |
-| Structure | Model-generated smooth white source-visible contours for the accepted foreground, without invented internal detail; neutral black when disabled | Opaque black canvas |
+| Structure | Model-generated smooth white source-faithful contours for the accepted foreground, including visible internal defining lines but excluding lines absent from the source and added shading or texture strokes; neutral black when disabled | Opaque black canvas |
 | Bloom | Near blur in R, wide blur in G, B=0; neutral black when disabled | Opaque |
 
 The character and card interface intentionally share one runtime depth. A temporary subject or UI selection mask may be used while preparing resources, but do not expose another moving character layer.
@@ -77,11 +77,15 @@ The chroma presence plate remains authoritative for whether a source pixel belon
 
 When the cut around a limb, garment, hair or fur strand, subject-linked effect, or frame junction is ambiguous, regenerate the selection aids with a more explicit semantic prompt. Never fill the gap with scenery, bridge an enclosed background pocket into foreground, synthesize the subject, or repaint retained pixels. The independent subject plate must still cover every source-visible main-subject pixel, and the foreground-presence plate must still exclude unrelated scenery.
 
-## Contour-only foreground highlight
+## Source-faithful contour highlight
 
-Use the accepted transparent `foreground.png` as the edit target. Generate one contour-only transformation rather than asking the model to identify, isolate, beautify, or reconstruct a character:
+Use the accepted transparent `foreground.png` as the edit target. `Contour-only` is a provenance and rendering rule: keep lines that are visibly present in the source and omit filled shading or synthesized texture. It is not a positional rule and never means external silhouette only. A line must not be rejected merely because it lies inside the subject.
 
-> Convert the visible non-transparent foreground into a pure luminous contour drawing. Trace only contours already visibly present in the supplied foreground: outer silhouettes and necessary visible boundaries where foreground shapes overlap or separate. Cover the accepted main subject, subject-linked effects, typography, numbers, symbols, information panels, logos, subject frame, and card frame only where those visible contours exist. Preserve the complete original canvas, aspect ratio, framing, scale, positions, overlaps, and transparent negative spaces. Use only thin, smooth, continuous white antialiased lines on a genuinely transparent background. Do not invent, infer, embellish, beautify, or add any line. Do not add facial, anatomical, hair, fur, fabric, surface, shading, hatching, highlight, texture, or decorative interior detail. Do not crop, recenter, rotate, stretch, rearrange, add content, complete concealed shapes, or reconstruct hidden anatomy. Do not use color, filled regions, gray shading, hatching, halftone, paper texture, glow blur, shadows, or a watermark.
+Generate one source-faithful line transformation rather than asking the model to identify, isolate, beautify, or reconstruct a character:
+
+> Convert the visible non-transparent foreground into a pure luminous source-faithful line drawing. Preserve contours already visibly present in the supplied foreground: outer silhouettes; visible overlap and separation boundaries; and internal defining contours such as eyes, mouths, facial or cheek markings, fingers, hair or fur locks, garment seams and folds, existing pattern outlines, typography, numbers, symbols, subject-linked effect lines, information-panel borders, logos, subject-frame details, and card-frame details. These source-visible internal contours are valid and must not be removed or rejected merely because they are internal, facial, anatomical, textile, decorative, or part of the interface. Preserve the complete original canvas, aspect ratio, framing, scale, positions, overlaps, and transparent negative spaces. Use only thin, smooth, continuous white antialiased lines on a genuinely transparent background. Never create a line absent from the source, infer a line behind an occlusion, invent anatomy or features, add eyelashes or fur strokes, add garment folds or patterns, or introduce shading, cross-hatching, halftone, noise, highlight texture, material texture, filled regions, gray shading, paper texture, glow blur, shadows, or a watermark. Do not crop, recenter, rotate, stretch, rearrange, add content, complete concealed shapes, or reconstruct hidden anatomy.
+
+Positive examples are a visible eye rim, mouth line, cheek-mark boundary, finger separation, garment seam, or printed pattern outline already present in the source. Negative examples are a new eyelash, a reconstructed hidden finger, extra fur strands, an invented clothing fold, or hatching added to suggest volume.
 
 Generate this as a style transformation of the supplied foreground, not as hidden-content completion. A comparison image may define line quality, but never copy it into project assets.
 
@@ -96,7 +100,7 @@ python scripts/prepare_generated_lineart.py \
   --output-report structure-generated-report.json
 ```
 
-Inspect the transparent preview against the source at full size. Reject every stroke that does not correspond to a source-visible silhouette or overlap/separation boundary, including invented facial features, anatomy, hair, fur, fabric, texture, shading, highlights, and decorative details. Also reject filled regions, broad glow, missing major foreground groups, or local geometry changes. Text spelling inside this temporary highlight map is less important than contour registration because its RGB is never shown, but line placement must still follow the source foreground.
+Inspect the transparent preview against the source at full size. Accept source-visible internal defining contours and never reject them solely for being inside the subject. Reject strokes absent from the source, inferred hidden geometry, invented facial or anatomical features, extra hair, fur, fabric, pattern, or decorative marks, and any shading, hatching, noise, highlight texture, or material texture. Also reject filled regions, broad glow, missing major foreground groups or defining contours, background lines in transparent foreground regions, and local geometry changes. Text spelling inside this temporary highlight map is less important than contour registration because its RGB is never shown, but line placement must still follow the source foreground.
 
 If the image service refuses, fails, or cannot produce a usable line drawing, do not retry with evasive wording and do not use local pixel-edge extraction. Continue the card without line emission by creating neutral maps:
 
@@ -117,7 +121,7 @@ Keep the accepted normalized original as `source.png`; it is the runtime fallbac
 The source, foreground, structure, and bloom always occupy the same full canvas. Never align independently cropped bounding boxes.
 
 1. Create a red structure overlay on the foreground with `prepare_structure_maps.py --output-overlay`.
-2. Check the subject silhouette, subject-linked effects, typography, panels, and long frame runs. Reject invented internal detail even when global alignment is good.
+2. Check the subject silhouette, source-visible internal defining contours, subject-linked effects, typography, panels, and long frame runs. Accept registered internal contours; reject only missing, displaced, hidden-completion, or model-invented lines and added shading or texture strokes.
 3. Run `calibrate_structure.py` to estimate one safe full-canvas affine from the generated contour drawing to original source edges. Record its six forward coefficients and correlation report.
 4. Prefer rejection and regeneration when local geometry changes. Automatic or manual affine is only for uniform framing drift.
 5. Do not apply a UI occlusion mask: UI, text, panels, effects, and frame are intentionally part of this highlight layer.

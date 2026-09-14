@@ -154,7 +154,7 @@ def main() -> int:
     )
     if contour_enabled:
         warnings.append(
-            "Inspect the red contour overlay: keep only source-visible silhouettes and overlap or separation contours; reject every invented or decorative internal detail."
+            "Inspect the red contour overlay: accept registered source-visible internal defining contours and do not treat contour as external silhouette only; reject lines absent from the source, inferred hidden lines, invented features or decoration, and shading or texture strokes."
         )
     else:
         warnings.append(

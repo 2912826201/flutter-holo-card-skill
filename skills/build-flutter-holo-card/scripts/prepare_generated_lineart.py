@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize model-generated white line art into registered structure assets."""
+"""Normalize model-generated source-faithful white line art."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def main() -> int:
     parser.add_argument("--output-report", type=Path)
     parser.add_argument("--background-cutoff", type=int, default=205)
     parser.add_argument("--full-line-level", type=int, default=245)
-    parser.add_argument("--maximum-line-coverage", type=float, default=0.35)
+    parser.add_argument("--maximum-line-coverage", type=float, default=0.12)
     args = parser.parse_args()
 
     if not 0 <= args.background_cutoff < args.full_line_level <= 255:
@@ -94,7 +94,8 @@ def main() -> int:
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
         "required_visual_review": [
-            "Confirm every retained stroke is a source-visible silhouette or overlap/separation contour, not an invented detail or checkerboard backdrop.",
+            "Accept source-visible internal defining contours such as eyes, mouths, facial markings, fingers, hair or fur locks, garment seams or folds, existing patterns, typography, symbols, effects, panels, logos, and frames; contour does not mean external silhouette only.",
+            "Reject only strokes absent from the source, inferred hidden lines, model-invented features or decoration, shading or texture strokes, and checkerboard backdrop residue.",
             "Confirm the resized full canvas remains globally registered before affine calibration.",
         ],
     }

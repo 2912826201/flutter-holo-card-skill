@@ -16,6 +16,36 @@ SCRIPTS = ROOT / "skills" / "build-flutter-holo-card" / "scripts"
 
 
 class ScriptTests(unittest.TestCase):
+    def test_contour_contract_is_source_based_not_outer_silhouette_only(self) -> None:
+        skill = (
+            ROOT / "skills" / "build-flutter-holo-card" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        workflow = (
+            ROOT
+            / "skills"
+            / "build-flutter-holo-card"
+            / "references"
+            / "resource-workflow.md"
+        ).read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        normalizer = (
+            SCRIPTS / "prepare_generated_lineart.py"
+        ).read_text(encoding="utf-8")
+        checker = (SCRIPTS / "check_assets.py").read_text(encoding="utf-8")
+
+        self.assertIn("contour is provenance-based, not position-based", skill)
+        self.assertIn("does **not** mean external silhouette only", skill)
+        self.assertIn("visible eyes, mouths, facial or cheek markings", skill)
+        self.assertIn("never means external silhouette only", workflow)
+        self.assertIn("must not be removed or rejected merely because they are internal", workflow)
+        self.assertIn("眼睛、嘴巴、面部标记", readme)
+        self.assertNotIn(
+            "add facial, anatomical, hair, fur, fabric, surface",
+            skill + workflow,
+        )
+        self.assertIn('default=0.12', normalizer)
+        self.assertIn('line_coverage >= 0.12', checker)
+
     def test_cleanup_assets_keeps_only_final_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -212,6 +242,41 @@ class ScriptTests(unittest.TestCase):
                 structure_image.getbbox(),
             )
             self.assertEqual(transparent_image.getchannel("R").getextrema(), (255, 255))
+
+    def test_prepare_generated_lineart_uses_final_density_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = root / "reference.png"
+            lineart = root / "lineart.png"
+
+            Image.new("RGBA", (100, 140), (60, 80, 100, 255)).save(reference)
+            generated = Image.new("RGBA", (100, 140), (255, 255, 255, 0))
+            ImageDraw.Draw(generated).rectangle(
+                (10, 10, 50, 79), fill=(255, 255, 255, 255)
+            )
+            generated.save(lineart)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_generated_lineart.py"),
+                    "--reference",
+                    str(reference),
+                    "--lineart",
+                    str(lineart),
+                    "--output-structure",
+                    str(root / "structure.png"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(prepared.returncode, 0)
+            report = json.loads(prepared.stdout)
+            self.assertGreaterEqual(report["strong_line_coverage"], 0.12)
+            self.assertIn(
+                "Generated line art is too dense for a highlight mask",
+                report["errors"],
+            )
 
     def test_disabled_contour_keeps_five_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

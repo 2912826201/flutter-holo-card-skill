@@ -118,8 +118,8 @@ def main() -> int:
         "forward_affine_cli": ",".join(f"{value:.9f}" for value in coefficients),
         "errors": errors,
         "required_visual_review": [
-            "Inspect eyes, fingers, face, and long silhouette runs in the alignment overlay.",
-            "Reject local anatomical mismatch even when global edge correlation passes.",
+            "Inspect source-visible eyes, mouth, facial markings, fingers, garment lines, patterns, and long silhouette runs in the alignment overlay; correctly registered internal contours are valid.",
+            "Reject missing or displaced source-visible contours, inferred hidden lines, and local geometry mismatch even when global edge correlation passes.",
         ],
     }
     rendered = json.dumps(report, indent=2)
