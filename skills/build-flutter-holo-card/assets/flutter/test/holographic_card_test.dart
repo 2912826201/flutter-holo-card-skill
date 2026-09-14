@@ -49,6 +49,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(renderer, findsOneWidget);
+    final HolographicCard cardWidget = tester.widget<HolographicCard>(
+      find.byType(HolographicCard),
+    );
+    expect(cardWidget.depth, 0);
+    expect(cardWidget.viewSensitivity, 4);
     expect(_painter(tester, renderer).cardMaskImage.width, 2);
     expect(_painter(tester, renderer).cardMaskImage.height, 2);
     expect(_painter(tester, renderer).hasCharacterLayer, isFalse);

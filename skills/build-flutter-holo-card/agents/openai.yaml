@@ -1,4 +1,4 @@
 interface:
   display_name: "Build Flutter Holo Card"
-  short_description: "Build layered Flutter holo cards or fallback assets"
-  default_prompt: "Use $build-flutter-holo-card with effect=auto to prefer independent-character depth, fall back to merged foreground when needed, and integrate the tested Flutter component unless I request asset-only mode."
+  short_description: "Build repair-first layered Flutter holo cards"
+  default_prompt: "Use $build-flutter-holo-card with effect=auto. Keep repairing the layered-3d primary route for technical or quality failures; use merged-2d only after an explicit image-provider safety refusal of independent-character generation. Integrate the tested Flutter component unless I request asset-only mode."

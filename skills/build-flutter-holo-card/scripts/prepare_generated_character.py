@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageFilter, ImageOps
 
-from prepare_foreground import extract_green_matte, resize_full_canvas
+from prepare_foreground import resize_full_canvas
 
 
 def composite_preview(layer: Image.Image, value: int) -> Image.Image:
@@ -31,8 +31,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--character", required=True, type=Path)
-    parser.add_argument("--selection", type=Path)
-    parser.add_argument("--visible-subject-selection", required=True, type=Path)
+    parser.add_argument("--alpha-mask", type=Path)
+    parser.add_argument(
+        "--visible-subject-mask",
+        "--visible-subject-selection",
+        dest="visible_subject_mask",
+        required=True,
+        type=Path,
+    )
     parser.add_argument("--output-character", required=True, type=Path)
     parser.add_argument("--output-visible-subject-mask", required=True, type=Path)
     parser.add_argument("--output-black-preview", type=Path)
@@ -48,14 +54,17 @@ def main() -> int:
     generated_pixels = np.asarray(generated, dtype=np.uint8).copy()
     alpha = generated.getchannel("A")
 
-    if args.selection:
-        selection = ImageOps.exif_transpose(Image.open(args.selection)).convert("RGB")
-        selection = resize_full_canvas(selection, source.size, "Character selection")
-        selected_alpha = ImageOps.invert(extract_green_matte(selection))
+    if args.alpha_mask:
+        mask_image = ImageOps.exif_transpose(Image.open(args.alpha_mask))
+        if mask_image.mode not in ("1", "L"):
+            raise ValueError("Character alpha mask must use grayscale L or 1 mode")
+        selected_alpha = resize_full_canvas(
+            mask_image.convert("L"), source.size, "Character alpha mask"
+        )
         alpha = ImageChops.multiply(alpha, selected_alpha)
     elif alpha.getextrema() == (255, 255):
         raise ValueError(
-            "Opaque generated character requires a registered chroma --selection"
+            "Opaque generated character requires a reviewed grayscale --alpha-mask"
         )
 
     if args.feather_radius > 0:
@@ -64,7 +73,7 @@ def main() -> int:
     alpha = ImageChops.multiply(alpha, source.getchannel("A"))
 
     visible_selection = ImageOps.exif_transpose(
-        Image.open(args.visible_subject_selection)
+        Image.open(args.visible_subject_mask)
     ).convert("L")
     visible_selection = resize_full_canvas(
         visible_selection, source.size, "Visible subject selection"
@@ -93,8 +102,6 @@ def main() -> int:
         errors.append("Generated character alpha misses source-visible subject pixels")
     if character_coverage <= 0.001:
         errors.append("Generated character alpha is empty")
-    elif character_coverage >= 0.9:
-        errors.append("Generated character retains too much non-character canvas")
     if final_alpha.getextrema() == (255, 255):
         errors.append("Generated character has no transparent region")
 
@@ -125,7 +132,7 @@ def main() -> int:
             if visible_pixels.any()
             else False
         ),
-        "selection_used": args.selection is not None,
+        "alpha_mask_used": args.alpha_mask is not None,
         "errors": errors,
         "required_visual_review": [
             "Compare the generated color layer with the source at full size; reject any changed visible feature, pose, scale, or position.",

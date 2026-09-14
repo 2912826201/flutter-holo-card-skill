@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an original-pixel foreground from a chroma or opacity selection plate."""
+"""Build an original-pixel foreground from reviewed grayscale masks."""
 
 from __future__ import annotations
 
@@ -46,27 +46,6 @@ def resize_full_canvas(
     if image.size == size:
         return image
     return image.resize(size, Image.Resampling.LANCZOS)
-
-
-def smoothstep(value: np.ndarray, lower: float, upper: float) -> np.ndarray:
-    normalized = np.clip((value - lower) / (upper - lower), 0.0, 1.0)
-    return normalized * normalized * (3.0 - 2.0 * normalized)
-
-
-def extract_green_matte(selection: Image.Image) -> Image.Image:
-    rgb = np.asarray(selection.convert("RGB"), dtype=np.float32)
-    red = rgb[..., 0]
-    green = rgb[..., 1]
-    blue = rgb[..., 2]
-    dominance = green - np.maximum(red, blue)
-
-    # 选择板的绿色只表达“场景应透明”。双门限同时约束亮度与色相优势，
-    # 可避免把人物的自然绿色眼睛、阴影或低饱和印刷色误当成底色。
-    dominance_weight = smoothstep(dominance, 24.0, 72.0)
-    brightness_weight = smoothstep(green, 118.0, 210.0)
-    matte = dominance_weight * brightness_weight
-    matte_u8 = np.rint(matte * 255.0).astype(np.uint8)
-    return Image.fromarray(matte_u8, mode="L")
 
 
 def extract_three_state_alpha(
@@ -137,15 +116,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path)
     selection_group = parser.add_mutually_exclusive_group(required=True)
-    selection_group.add_argument("--selection", type=Path)
+    selection_group.add_argument("--alpha-mask", type=Path)
     selection_group.add_argument("--opacity-selection", type=Path)
-    parser.add_argument("--presence-selection", type=Path)
+    parser.add_argument("--presence-mask", type=Path)
     parser.add_argument(
         "--layer-role",
         choices=("merged", "interface"),
         default="merged",
     )
-    parser.add_argument("--opaque-subject-selection", type=Path)
+    parser.add_argument(
+        "--opaque-subject-mask",
+        "--opaque-subject-selection",
+        dest="opaque_subject_mask",
+        type=Path,
+    )
     parser.add_argument("--output-foreground", required=True, type=Path)
     parser.add_argument("--output-opaque-subject-mask", type=Path)
     parser.add_argument("--output-mask", type=Path)
@@ -164,51 +148,67 @@ def main() -> int:
     if not 0 <= args.material_color_radius <= 160:
         raise ValueError("Material color radius must be between 0 and 160")
     if args.layer_role == "merged" and (
-        args.opaque_subject_selection is None
+        args.opaque_subject_mask is None
         or args.output_opaque_subject_mask is None
     ):
         raise ValueError(
-            "Merged foreground requires --opaque-subject-selection and "
+            "Merged foreground requires --opaque-subject-mask and "
             "--output-opaque-subject-mask"
         )
 
     source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
-    selection_path = args.opacity_selection or args.selection
-    selection = ImageOps.exif_transpose(Image.open(selection_path)).convert("RGB")
-    selection = resize_full_canvas(selection, source.size, "Selection")
-    subject_selection = None
-    if args.opaque_subject_selection is not None:
-        subject_selection_rgb = ImageOps.exif_transpose(
-            Image.open(args.opaque_subject_selection)
-        ).convert("RGB")
-        subject_selection_rgb = resize_full_canvas(
-            subject_selection_rgb, source.size, "Opaque subject selection"
+    opacity_selection = None
+    if args.alpha_mask:
+        alpha_mask = ImageOps.exif_transpose(Image.open(args.alpha_mask))
+        if alpha_mask.mode not in ("1", "L"):
+            raise ValueError("Foreground alpha mask must use grayscale L or 1 mode")
+        alpha_mask = resize_full_canvas(
+            alpha_mask.convert("L"), source.size, "Foreground alpha mask"
         )
-        subject_selection = subject_selection_rgb.convert("L").point(
+    else:
+        opacity_selection = ImageOps.exif_transpose(
+            Image.open(args.opacity_selection)
+        ).convert("RGB")
+        opacity_selection = resize_full_canvas(
+            opacity_selection, source.size, "Opacity selection"
+        )
+    subject_selection = None
+    if args.opaque_subject_mask is not None:
+        subject_mask_image = ImageOps.exif_transpose(
+            Image.open(args.opaque_subject_mask)
+        )
+        if subject_mask_image.mode not in ("1", "L"):
+            raise ValueError("Opaque subject mask must use grayscale L or 1 mode")
+        subject_mask_image = resize_full_canvas(
+            subject_mask_image.convert("L"), source.size, "Opaque subject mask"
+        )
+        subject_selection = subject_mask_image.point(
             lambda value: 255 if value >= 128 else 0
         )
-    if args.opacity_selection and not args.presence_selection:
-        raise ValueError(
-            "Opacity selection requires a chroma --presence-selection"
-        )
+    if args.opacity_selection and not args.presence_mask:
+        raise ValueError("Opacity selection requires an exact --presence-mask")
 
     neutral_coverage = None
     translucent_coverage = 0.0
     opaque_coverage = 0.0
     translucent_pixels = np.zeros(source.size[::-1], dtype=bool)
-    if args.opacity_selection:
+    if args.alpha_mask:
+        foreground_alpha = alpha_mask
+        selection_mode = "exact_alpha_mask"
+    elif args.opacity_selection:
         (
             _,
             requested_translucent_pixels,
             neutral_coverage,
             _,
             _,
-        ) = extract_three_state_alpha(selection, args.translucent_alpha)
-        presence = ImageOps.exif_transpose(
-            Image.open(args.presence_selection)
-        ).convert("RGB")
-        presence = resize_full_canvas(presence, source.size, "Presence selection")
-        presence_alpha = ImageOps.invert(extract_green_matte(presence))
+        ) = extract_three_state_alpha(opacity_selection, args.translucent_alpha)
+        presence = ImageOps.exif_transpose(Image.open(args.presence_mask))
+        if presence.mode not in ("1", "L"):
+            raise ValueError("Presence mask must use grayscale L or 1 mode")
+        presence_alpha = resize_full_canvas(
+            presence.convert("L"), source.size, "Presence mask"
+        )
         presence_pixels = np.asarray(presence_alpha, dtype=np.uint8)
         translucent_pixels = np.logical_and(
             requested_translucent_pixels, presence_pixels >= 32
@@ -223,10 +223,6 @@ def main() -> int:
             np.logical_and(presence_pixels >= 128, ~translucent_pixels).mean()
         )
         selection_mode = "three_state_opacity"
-    else:
-        matte = extract_green_matte(selection)
-        foreground_alpha = ImageOps.invert(matte)
-        selection_mode = "chroma"
 
     if args.forward_affine:
         inverse = inverse_affine(args.forward_affine)
@@ -304,24 +300,22 @@ def main() -> int:
     foreground_coverage = float(strong_foreground.mean())
     matte_coverage = 1.0 - foreground_coverage
     errors: list[str] = []
+    warnings: list[str] = []
     if args.layer_role == "merged" and subject_coverage <= 0.001:
         errors.append("Opaque subject selection is empty")
     if missing_subject_pixels.any():
         errors.append(
             "Foreground presence selection misses pixels from the opaque subject"
         )
-    if matte_coverage < 0.03:
-        errors.append("Selection contains too little chroma scenery matte")
-    maximum_matte_coverage = 0.985 if args.layer_role == "interface" else 0.92
-    if matte_coverage > maximum_matte_coverage:
-        errors.append("Selection removes too much of the card")
     if foreground_alpha.getextrema() == (255, 255):
         errors.append("Foreground contains no transparent scenery")
     if args.opacity_selection:
         if neutral_coverage is not None and neutral_coverage < 0.9:
             errors.append("Opacity selection must use neutral black, gray, and white")
         if translucent_coverage < 0.002:
-            errors.append("Opacity selection contains no translucent material")
+            warnings.append(
+                "Opacity selection contains very little translucent material; confirm this branch is intentional"
+            )
 
     args.output_foreground.parent.mkdir(parents=True, exist_ok=True)
     foreground.save(args.output_foreground)
@@ -364,7 +358,7 @@ def main() -> int:
         "scenery_matte_coverage": round(matte_coverage, 6),
         "layer_role": args.layer_role,
         "selection_mode": selection_mode,
-        "presence_selection_used": args.presence_selection is not None,
+        "presence_mask_used": args.presence_mask is not None,
         "translucent_material_coverage": round(translucent_coverage, 6),
         "opaque_selection_coverage": round(opaque_coverage, 6),
         "neutral_selection_coverage": (
@@ -381,6 +375,7 @@ def main() -> int:
         ),
         "affine_applied": args.forward_affine is not None,
         "errors": errors,
+        "warnings": warnings,
         "required_visual_review": [
             (
                 "Inspect black and white previews: the complete visible subject must be solid and no scenery element may appear in foreground."

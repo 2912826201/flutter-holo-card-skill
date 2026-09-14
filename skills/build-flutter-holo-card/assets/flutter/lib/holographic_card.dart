@@ -18,14 +18,14 @@ class HolographicCard extends StatefulWidget {
     this.depth = 0,
     this.effectStrength = 1,
     this.contourGlowStrength = 0.15,
-    this.viewSensitivity = 2.4,
+    this.viewSensitivity = 4,
     this.maxTiltRadians = 0.28,
     this.semanticLabel = 'Interactive holographic card',
     super.key,
   }) : assert(depth >= -3 && depth <= 3),
        assert(effectStrength >= 0 && effectStrength <= 1),
        assert(contourGlowStrength >= 0 && contourGlowStrength <= 3),
-       assert(viewSensitivity >= 1 && viewSensitivity <= 3),
+       assert(viewSensitivity >= 1 && viewSensitivity <= 5),
        assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
 
   final ImageProvider cardImage;

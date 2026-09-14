@@ -66,10 +66,13 @@ def main() -> int:
     structure_pixels = np.rint(coverage * 255.0).astype(np.uint8)
     line_coverage = float((structure_pixels >= 128).mean())
     errors: list[str] = []
+    warnings: list[str] = []
     if line_coverage <= 0.0001:
         errors.append("Generated line art is empty after background removal")
     if line_coverage >= args.maximum_line_coverage:
-        errors.append("Generated line art is too dense for a highlight mask")
+        warnings.append(
+            "Generated line art exceeds the review-density guide; inspect for fills, shading, or texture before deciding"
+        )
 
     args.output_structure.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(structure_pixels, mode="L").save(args.output_structure)
@@ -93,6 +96,7 @@ def main() -> int:
         "full_line_level": args.full_line_level,
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
+        "warnings": warnings,
         "required_visual_review": [
             "Accept source-visible internal defining contours such as eyes, mouths, facial markings, fingers, hair or fur locks, garment seams or folds, existing patterns, typography, symbols, effects, panels, logos, and frames; contour does not mean external silhouette only.",
             "Reject only strokes absent from the source, inferred hidden lines, model-invented features or decoration, shading or texture strokes, and checkerboard backdrop residue.",

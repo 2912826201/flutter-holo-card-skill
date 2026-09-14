@@ -56,9 +56,17 @@ def main() -> int:
     }
     if character is not None:
         images["character"] = character
+    source = (
+        ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
+        if args.source
+        else None
+    )
+    if source is not None:
+        images["source"] = source
 
     errors: list[str] = []
     warnings: list[str] = []
+    review_items: list[str] = []
     sizes = {name: image.size for name, image in images.items()}
     if len(set(sizes.values())) != 1:
         errors.append(f"Canvas mismatch: {sizes}")
@@ -86,9 +94,19 @@ def main() -> int:
 
     background_alpha = alpha(background)
     background_coverage = coverage(background_alpha)
-    if background_coverage < 0.9:
-        errors.append(
-            "Background alpha leaves too much of the card empty; only exterior corners may be transparent"
+    background_missing_card_coverage = None
+    if source is not None and source.size == background.size:
+        source_card_pixels = np.asarray(alpha(source), dtype=np.uint8) > 4
+        missing_background_pixels = np.logical_and(
+            source_card_pixels,
+            np.asarray(background_alpha, dtype=np.uint8) < 250,
+        )
+        background_missing_card_coverage = float(missing_background_pixels.mean())
+        if missing_background_pixels.any():
+            errors.append("Background is not opaque across the source card shape")
+    elif source is None and background_coverage < 0.9:
+        warnings.append(
+            "Background coverage is below the review guide; pass --source to validate the actual card shape"
         )
 
     foreground_coverage = coverage(alpha(foreground))
@@ -103,12 +121,13 @@ def main() -> int:
         if character_coverage <= 0.001:
             errors.append("Character alpha is empty")
         elif character_coverage >= 0.9:
-            errors.append("Character retains too much non-character canvas")
+            warnings.append(
+                "Character covers most of the canvas; confirm this is a genuinely large subject rather than retained scenery"
+            )
 
     source_rgb_preserved = None
     opaque_source_rgb_preserved = None
-    if args.source:
-        source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
+    if source is not None:
         if source.size != foreground.size:
             errors.append("Source canvas differs from foreground")
             source_rgb_preserved = False
@@ -144,7 +163,9 @@ def main() -> int:
     if contour_enabled and line_coverage <= 0.0001:
         errors.append("Contour signal is present but effectively empty")
     elif line_coverage >= 0.12:
-        errors.append("Contour coverage is too dense for a foreground highlight map")
+        warnings.append(
+            "Contour exceeds the density review guide; inspect for fills, shading, or texture"
+        )
     contour_owner_alpha = alpha(subject_layer)
     contour_outside_owner = np.logical_and(
         np.asarray(red, dtype=np.uint8) > 4,
@@ -174,7 +195,7 @@ def main() -> int:
             if spill.getextrema()[1] > 4:
                 errors.append("Contour spills into the declared occlusion mask")
 
-    warnings.extend(
+    review_items.extend(
         [
             "Visually confirm that the background contains no subject, text, or frame residue.",
             "Visually confirm the opaque subject mask covers every source-visible main-subject pixel and nothing else.",
@@ -191,11 +212,11 @@ def main() -> int:
         ]
     )
     if contour_enabled:
-        warnings.append(
+        review_items.append(
             "Inspect the red contour overlay: accept registered source-visible internal defining contours and do not treat contour as external silhouette only; reject lines absent from the source, inferred hidden lines, invented features or decoration, and shading or texture strokes."
         )
     else:
-        warnings.append(
+        review_items.append(
             "Contour and bloom are neutral black maps; line emission is intentionally disabled."
         )
     report = {
@@ -203,6 +224,11 @@ def main() -> int:
         "canvas": list(foreground.size),
         "effect_mode": effect_mode,
         "background_coverage": round(background_coverage, 6),
+        "background_missing_card_coverage": (
+            round(background_missing_card_coverage, 6)
+            if background_missing_card_coverage is not None
+            else None
+        ),
         "foreground_coverage": round(foreground_coverage, 6),
         "character_coverage": (
             round(character_coverage, 6)
@@ -216,7 +242,8 @@ def main() -> int:
         "contour_enabled": contour_enabled,
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
-        "required_visual_review": warnings,
+        "warnings": warnings,
+        "required_visual_review": review_items,
     }
     print(json.dumps(report, indent=2))
     return 0 if not errors else 1

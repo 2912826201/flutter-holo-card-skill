@@ -16,7 +16,11 @@ view.x = sin(rotateY) * 0.65 * sensitivity
 view.y = sin(rotateX) * 0.65 * sensitivity
 ```
 
-Clamp only after applying sensitivity. A useful default for small Flutter tilt is `2.4`, independently adjustable from physical rotation.
+Clamp only after applying sensitivity. The Flutter component uses a small physical
+rotation, so its primary preset uses `viewSensitivity = 4.0` and clamps the final
+view to the holo-card renderer's practical `[-0.5, 0.5]` range. This recreates the
+internal response of the reference's much larger drag angles without making the
+Widget itself rotate excessively.
 
 ```glsl
 vec2 characterUv = p - view * (depth < 0.0 ? 0.06 : 0.08) * depth;
@@ -25,6 +29,11 @@ vec2 backgroundUv = (p - 0.5) * 0.5 + 0.5 - view * 0.25;
 ```
 
 In layered-3d, sample character, contour, and bloom at characterUv and foreground at interfaceUv. In merged-2d, sample foreground, contour, and bloom at characterUv. Never fit or offset contour separately.
+
+Keep `depth = 0` as the neutral default from holo-card and preserve its full
+`-3...+3` range. Integrations may select a signed non-zero depth for their intended
+presentation. Depth changes UV displacement only; it never changes layer order or
+scales artwork.
 
 ## Foil and sweep
 
@@ -89,3 +98,4 @@ This prevents a lower-half touch from immediately pitching the card before the u
 - Horizontal drag beginning in the lower half leaves `view.y == 0`.
 - Subsequent upward drag makes `view.y > 0`.
 - A stronger sensitivity changes the internal view without increasing physical card rotation.
+- The primary defaults are `depth == 0` and `viewSensitivity == 4.0`.

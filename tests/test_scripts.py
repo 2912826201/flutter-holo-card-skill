@@ -16,7 +16,7 @@ SCRIPTS = ROOT / "skills" / "build-flutter-holo-card" / "scripts"
 
 
 class ScriptTests(unittest.TestCase):
-    def test_effect_modes_prefer_layered_and_define_fallback(self) -> None:
+    def test_effect_modes_only_fallback_on_explicit_safety_refusal(self) -> None:
         skill = (
             ROOT / "skills" / "build-flutter-holo-card" / "SKILL.md"
         ).read_text(encoding="utf-8")
@@ -30,16 +30,27 @@ class ScriptTests(unittest.TestCase):
             / "shaders"
             / "holographic_card.frag"
         ).read_text(encoding="utf-8")
+        foreground_preparer = (SCRIPTS / "prepare_foreground.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("effect=auto (default)", skill)
-        self.assertIn("Attempt layered-3d first", skill)
-        self.assertIn("continue with merged-2d", skill)
+        self.assertIn("Start and remain on `layered-3d`", skill)
+        self.assertIn("Only an explicit refusal payload returned by", skill)
+        self.assertIn(
+            "The agent's own quality judgment is never refusal evidence", skill
+        )
+        self.assertIn("report that primary stage as blocked", skill)
+        self.assertIn("Never change effect mode", skill)
+        self.assertNotIn("does not pass visual review, continue with merged-2d", skill)
         self.assertIn("requested_effect", skill)
         self.assertIn("effect=layered-3d", readme)
         self.assertIn("effect=merged-2d", readme)
         self.assertIn("uniform float uLayeredCharacter;", shader)
         self.assertIn("uniform sampler2D uCharacter;", shader)
         self.assertIn("(outputPoint - vec2(0.5)) * 1.6", shader)
+        self.assertNotIn("extract_green_matte", foreground_preparer)
+        self.assertNotIn('add_argument("--selection"', foreground_preparer)
 
     def test_contour_contract_is_source_based_not_outer_silhouette_only(self) -> None:
         skill = (
@@ -58,11 +69,12 @@ class ScriptTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         checker = (SCRIPTS / "check_assets.py").read_text(encoding="utf-8")
 
-        self.assertIn("contour is provenance-based, not position-based", skill)
-        self.assertIn("does **not** mean external silhouette only", skill)
-        self.assertIn("visible eyes, mouths, facial or cheek markings", skill)
-        self.assertIn("never means external silhouette only", workflow)
-        self.assertIn("must not be removed or rejected merely because they are internal", workflow)
+        self.assertIn("Contour is provenance-based, not position-based", skill)
+        self.assertIn("defining internal lines", skill)
+        self.assertIn("add no absent line", skill)
+        self.assertIn("Contour does not mean only the outer silhouette", workflow)
+        self.assertIn("Internal source-visible contours are valid", workflow)
+        self.assertIn("visible eyes, mouth lines, facial markings", workflow)
         self.assertIn("眼睛、嘴巴、面部标记", readme)
         self.assertNotIn(
             "add facial, anatomical, hair, fur, fabric, surface",
@@ -70,6 +82,8 @@ class ScriptTests(unittest.TestCase):
         )
         self.assertIn('default=0.12', normalizer)
         self.assertIn('line_coverage >= 0.12', checker)
+        self.assertIn('"warnings": warnings', normalizer)
+        self.assertIn('"warnings": warnings', checker)
 
     def test_cleanup_assets_keeps_only_final_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -85,6 +99,9 @@ class ScriptTests(unittest.TestCase):
                 (root / name).write_bytes(b"final")
             (root / "background-generated.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
+            (root / "foreground-visible-subject-mask.png").write_bytes(
+                b"temporary"
+            )
             (root / "foreground-opacity-selection.png").write_bytes(b"temporary")
             (root / "foreground-opaque-subject-selection.png").write_bytes(
                 b"temporary"
@@ -116,6 +133,9 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["ok"])
             self.assertFalse((root / "background-generated.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
+            self.assertFalse(
+                (root / "foreground-visible-subject-mask.png").exists()
+            )
             self.assertFalse((root / "foreground-opacity-selection.png").exists())
             self.assertFalse(
                 (root / "foreground-opaque-subject-selection.png").exists()
@@ -242,6 +262,57 @@ class ScriptTests(unittest.TestCase):
             visible_pixels = np.asarray(Image.open(output_mask)) >= 128
             self.assertTrue(np.all(final_alpha[visible_pixels] == 255))
 
+    def test_prepare_generated_character_uses_exact_mask_not_global_color_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            generated = root / "generated.png"
+            alpha_mask = root / "alpha-mask.png"
+            visible = root / "visible.png"
+            output = root / "character.png"
+
+            Image.new("RGBA", (100, 140), (40, 60, 80, 255)).save(source)
+            generated_image = Image.new("RGBA", (100, 140), (128, 128, 128, 255))
+            ImageDraw.Draw(generated_image).ellipse(
+                (20, 20, 80, 120), fill=(20, 220, 40, 255)
+            )
+            generated_image.save(generated)
+            exact_alpha = Image.new("L", generated_image.size, 0)
+            ImageDraw.Draw(exact_alpha).ellipse((20, 20, 80, 120), fill=255)
+            exact_alpha.save(alpha_mask)
+            visible_mask = Image.new("L", generated_image.size, 0)
+            ImageDraw.Draw(visible_mask).ellipse((24, 24, 76, 116), fill=255)
+            visible_mask.save(visible)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_generated_character.py"),
+                    "--source",
+                    str(source),
+                    "--character",
+                    str(generated),
+                    "--alpha-mask",
+                    str(alpha_mask),
+                    "--visible-subject-mask",
+                    str(visible),
+                    "--output-character",
+                    str(output),
+                    "--output-visible-subject-mask",
+                    str(root / "subject-mask.png"),
+                    "--feather-radius",
+                    "0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            self.assertTrue(report["alpha_mask_used"])
+            result = Image.open(output).convert("RGBA")
+            self.assertEqual(result.getpixel((50, 70)), (20, 220, 40, 255))
+            self.assertEqual(result.getpixel((2, 2))[3], 0)
+
     def test_calibrate_structure_recovers_small_global_drift(self) -> None:
         try:
             import cv2  # noqa: F401
@@ -350,7 +421,7 @@ class ScriptTests(unittest.TestCase):
             )
             self.assertEqual(transparent_image.getchannel("R").getextrema(), (255, 255))
 
-    def test_prepare_generated_lineart_uses_final_density_limit(self) -> None:
+    def test_prepare_generated_lineart_reports_density_without_rejecting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference = root / "reference.png"
@@ -377,13 +448,11 @@ class ScriptTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertNotEqual(prepared.returncode, 0)
+            self.assertEqual(prepared.returncode, 0)
             report = json.loads(prepared.stdout)
             self.assertGreaterEqual(report["strong_line_coverage"], 0.12)
-            self.assertIn(
-                "Generated line art is too dense for a highlight mask",
-                report["errors"],
-            )
+            self.assertFalse(report["errors"])
+            self.assertTrue(report["warnings"])
 
     def test_disabled_contour_keeps_five_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -567,7 +636,7 @@ class ScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
-            selection = root / "selection.png"
+            selection = root / "alpha-mask.png"
             foreground = root / "foreground.png"
             subject_selection = root / "subject-selection.png"
             subject_mask = root / "subject-mask.png"
@@ -585,12 +654,12 @@ class ScriptTests(unittest.TestCase):
             )
             source_image.save(source)
 
-            selection_image = Image.new("RGB", (200, 280), (0, 255, 0))
+            selection_image = Image.new("L", (200, 280), 0)
             ImageDraw.Draw(selection_image).rounded_rectangle(
-                (2, 2, 197, 277), radius=16, outline=(240, 240, 240), width=10
+                (2, 2, 197, 277), radius=16, outline=255, width=10
             )
             ImageDraw.Draw(selection_image).ellipse(
-                (56, 60, 144, 216), fill=(210, 70, 145)
+                (56, 60, 144, 216), fill=255
             )
             selection_image.save(selection)
 
@@ -606,7 +675,7 @@ class ScriptTests(unittest.TestCase):
                     str(SCRIPTS / "prepare_foreground.py"),
                     "--source",
                     str(source),
-                    "--selection",
+                    "--alpha-mask",
                     str(selection),
                     "--opaque-subject-selection",
                     str(subject_selection),
@@ -633,6 +702,7 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["subject_fully_opaque"])
             self.assertEqual(report["opaque_subject_missing_coverage"], 0.0)
             self.assertEqual(report["canvas"], [100, 140])
+            self.assertEqual(report["selection_mode"], "exact_alpha_mask")
 
             source_rgb = Image.open(source).convert("RGB")
             foreground_image = Image.open(foreground).convert("RGBA")
@@ -650,7 +720,7 @@ class ScriptTests(unittest.TestCase):
             root = Path(directory)
             source = root / "source.png"
             selection = root / "opacity-selection.png"
-            presence = root / "presence-selection.png"
+            presence = root / "presence-mask.png"
             subject_selection = root / "subject-selection.png"
             subject_mask = root / "subject-mask.png"
             foreground = root / "foreground.png"
@@ -675,11 +745,11 @@ class ScriptTests(unittest.TestCase):
             opacity_draw.line((18, 112, 82, 112), fill=255, width=3)
             opacity.save(selection)
 
-            presence_image = Image.new("RGB", source_image.size, (0, 255, 0))
+            presence_image = Image.new("L", source_image.size, 0)
             presence_draw = ImageDraw.Draw(presence_image)
-            presence_draw.ellipse((20, 18, 78, 92), fill=(205, 75, 145))
-            presence_draw.rectangle((8, 98, 92, 132), fill=(120, 155, 205))
-            presence_draw.line((18, 112, 82, 112), fill=(245, 245, 245), width=3)
+            presence_draw.ellipse((20, 18, 78, 92), fill=255)
+            presence_draw.rectangle((8, 98, 92, 132), fill=255)
+            presence_draw.line((18, 112, 82, 112), fill=255, width=3)
             presence_image.save(presence)
 
             subject_selection_image = Image.new("L", source_image.size, 0)
@@ -696,7 +766,7 @@ class ScriptTests(unittest.TestCase):
                     str(source),
                     "--opacity-selection",
                     str(selection),
-                    "--presence-selection",
+                    "--presence-mask",
                     str(presence),
                     "--opaque-subject-selection",
                     str(subject_selection),
@@ -718,7 +788,7 @@ class ScriptTests(unittest.TestCase):
             report = json.loads(prepared.stdout)
             self.assertTrue(report["ok"])
             self.assertEqual(report["selection_mode"], "three_state_opacity")
-            self.assertTrue(report["presence_selection_used"])
+            self.assertTrue(report["presence_mask_used"])
             self.assertGreater(report["translucent_material_coverage"], 0.1)
             self.assertEqual(report["translucent_alpha"], 144)
             self.assertFalse(report["source_rgb_preserved"])
@@ -752,9 +822,9 @@ class ScriptTests(unittest.TestCase):
 
             source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
             source_image.save(source)
-            selection_image = Image.new("RGB", source_image.size, (0, 255, 0))
+            selection_image = Image.new("L", source_image.size, 0)
             ImageDraw.Draw(selection_image).rectangle(
-                (20, 25, 55, 105), fill=(210, 70, 145)
+                (20, 25, 55, 105), fill=255
             )
             selection_image.save(selection)
             subject_selection_image = Image.new("L", source_image.size, 0)
@@ -769,7 +839,7 @@ class ScriptTests(unittest.TestCase):
                     str(SCRIPTS / "prepare_foreground.py"),
                     "--source",
                     str(source),
-                    "--selection",
+                    "--alpha-mask",
                     str(selection),
                     "--opaque-subject-selection",
                     str(subject_selection),
