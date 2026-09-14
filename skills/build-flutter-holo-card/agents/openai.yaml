@@ -1,4 +1,4 @@
 interface:
   display_name: "Build Flutter Holo Card"
-  short_description: "Build Flutter holo cards or aligned assets"
-  default_prompt: "Use $build-flutter-holo-card to prepare aligned holographic-card assets and, unless I request asset-only mode, integrate the tested Flutter component."
+  short_description: "Build layered Flutter holo cards or fallback assets"
+  default_prompt: "Use $build-flutter-holo-card with effect=auto to prefer independent-character depth, fall back to merged foreground when needed, and integrate the tested Flutter component unless I request asset-only mode."

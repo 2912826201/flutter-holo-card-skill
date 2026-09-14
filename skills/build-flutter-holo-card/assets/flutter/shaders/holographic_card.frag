@@ -6,8 +6,11 @@ uniform vec2 uView;
 uniform float uDepth;
 uniform float uContourBrightness;
 uniform float uPower;
+uniform float uEffectActivation;
+uniform float uLayeredCharacter;
 uniform sampler2D uBackground;
 uniform sampler2D uForeground;
+uniform sampler2D uCharacter;
 uniform sampler2D uStructure;
 uniform sampler2D uStructureBloom;
 uniform sampler2D uCardMask;
@@ -53,15 +56,20 @@ float band(vec2 point, vec2 view) {
 }
 
 void main() {
-  vec2 point = FlutterFragCoord().xy / uSize;
-  float cardMask = texture(uCardMask, point).a;
-  if (cardMask <= 0.001) {
-    fragColor = vec4(0.0);
-    return;
-  }
+  vec2 outputPoint = FlutterFragCoord().xy / uSize;
+  vec2 point = uLayeredCharacter > 0.5
+    ? (outputPoint - vec2(0.5)) * 1.6 + vec2(0.5)
+    : outputPoint;
+  float cardMask = texture(
+    uCardMask,
+    clamp(point, vec2(0.0), vec2(1.0))
+  ).a * insideUnit(point);
 
   float depthCoefficient = uDepth < 0.0 ? 0.06 : 0.08;
-  vec2 foregroundUv = point - uView * depthCoefficient * uDepth;
+  vec2 characterUv = point - uView * depthCoefficient * uDepth;
+  vec2 foregroundUv = uLayeredCharacter > 0.5
+    ? point - uView * 0.14 * max(uDepth, 0.0)
+    : characterUv;
   vec2 backgroundUv = (
     (point - vec2(0.5)) * 0.5
     + vec2(0.5)
@@ -72,18 +80,46 @@ void main() {
     uForeground,
     clamp(foregroundUv, vec2(0.0), vec2(1.0))
   );
-  foreground.a *= insideUnit(foregroundUv);
+  vec3 foregroundColor = unpremultiply(foreground);
+  float foregroundClip = uLayeredCharacter > 0.5
+    ? (uDepth > 0.0 ? 1.0 : cardMask)
+    : 1.0;
+  foreground.a *= insideUnit(foregroundUv) * foregroundClip;
+  vec4 character = texture(
+    uCharacter,
+    clamp(characterUv, vec2(0.0), vec2(1.0))
+  );
+  vec3 characterColor = unpremultiply(character);
+  character.a *= insideUnit(characterUv) * foregroundClip;
   vec4 background = texture(
     uBackground,
     clamp(backgroundUv, vec2(0.0), vec2(1.0))
   );
-  background.a *= insideUnit(backgroundUv);
+  vec3 backgroundColor = unpremultiply(background);
+  background.a *= insideUnit(backgroundUv) * cardMask;
 
   float foregroundAlpha = foreground.a;
-  float finalAlpha = cardMask;
-  vec3 foregroundColor = unpremultiply(foreground);
-  vec3 backgroundColor = unpremultiply(background);
-  vec3 base = mix(backgroundColor, foregroundColor, foregroundAlpha);
+  float characterAlpha = uLayeredCharacter > 0.5
+    ? character.a
+    : 0.0;
+  vec3 basePremultiplied = backgroundColor * background.a;
+  float baseAlpha = background.a;
+  vec3 base;
+  if (uLayeredCharacter > 0.5) {
+    basePremultiplied = (
+      characterColor * characterAlpha
+      + basePremultiplied * (1.0 - characterAlpha)
+    );
+    baseAlpha = characterAlpha + baseAlpha * (1.0 - characterAlpha);
+    base = basePremultiplied / max(baseAlpha, 0.0001);
+  } else {
+    // 兼容模式的颜色按原前景 Alpha 混合，最终形状仍严格由卡形遮罩决定。
+    // 这样既保留旧版静止画面，也不会在圆角处被前景 Alpha 顶成直角。
+    base = mix(backgroundColor, foregroundColor, foregroundAlpha);
+    baseAlpha = cardMask;
+  }
+  float finalAlpha = baseAlpha;
+  float activePower = uPower * uEffectActivation;
 
   float phase = (
     point.x * 0.62
@@ -97,9 +133,9 @@ void main() {
 
   vec3 foil = (
     base * (0.64 + spectrum * 0.7)
-    + spectrum * 0.07 * finalAlpha
+    + spectrum * 0.07 * baseAlpha
   );
-  base = mix(base, foil, light * 0.48 * uPower);
+  base = mix(base, foil, light * 0.48 * activePower);
 
   vec2 cell = fract(point * vec2(24.0, 34.0)) - vec2(0.5);
   float seed = hash(floor(point * vec2(24.0, 34.0)));
@@ -112,7 +148,23 @@ void main() {
   base += spectrum * (
     star * step(0.965, seed) * light * 0.65
     + micro * light * 0.12
-  ) * uPower * (1.0 - foregroundAlpha) * cardMask;
+  ) * activePower * (
+    1.0 - (uLayeredCharacter > 0.5 ? characterAlpha : foregroundAlpha)
+  ) * cardMask;
+
+  if (uLayeredCharacter > 0.5) {
+    vec3 composed = (
+      foregroundColor * foregroundAlpha
+      + base * baseAlpha * (1.0 - foregroundAlpha)
+    );
+    finalAlpha = foregroundAlpha + baseAlpha * (1.0 - foregroundAlpha);
+    base = composed / max(finalAlpha, 0.0001);
+  }
+
+  if (finalAlpha <= 0.001) {
+    fragColor = vec4(0.0);
+    return;
+  }
 
   float glare = pow(
     max(
@@ -124,24 +176,30 @@ void main() {
     ),
     5.0
   );
-  base += vec3(glare * 0.12 * uPower) * finalAlpha;
+  base += vec3(glare * 0.12 * activePower) * finalAlpha;
 
   float structure = texture(
     uStructure,
-    clamp(foregroundUv, vec2(0.0), vec2(1.0))
-  ).r * insideUnit(foregroundUv);
+    clamp(characterUv, vec2(0.0), vec2(1.0))
+  ).r * insideUnit(characterUv);
   vec2 structureBloom = texture(
     uStructureBloom,
-    clamp(foregroundUv, vec2(0.0), vec2(1.0))
-  ).rg * insideUnit(foregroundUv);
-  float line = structure * foregroundAlpha;
+    clamp(characterUv, vec2(0.0), vec2(1.0))
+  ).rg * insideUnit(characterUv);
+  float contourOwnerAlpha = uLayeredCharacter > 0.5
+    ? characterAlpha
+    : foregroundAlpha;
+  float uiOcclusion = uLayeredCharacter > 0.5
+    ? 1.0 - foregroundAlpha
+    : 1.0;
+  float line = structure * contourOwnerAlpha * uiOcclusion;
   float envelope = smoothstep(0.025, 0.42, light);
   vec3 emissionColor = spectrum * 0.85 + vec3(0.15);
   vec3 emission = (
     emissionColor
     * line
     * envelope
-    * uPower
+    * activePower
     * 40.0
     * uContourBrightness
   );
@@ -150,7 +208,7 @@ void main() {
     * (structureBloom.r * 0.55 + structureBloom.g * 0.8)
     * line
     * envelope
-    * uPower
+    * activePower
     * 40.0
     * uContourBrightness
   );

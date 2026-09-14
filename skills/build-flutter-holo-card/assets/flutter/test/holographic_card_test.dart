@@ -51,14 +51,16 @@ void main() {
     expect(renderer, findsOneWidget);
     expect(_painter(tester, renderer).cardMaskImage.width, 2);
     expect(_painter(tester, renderer).cardMaskImage.height, 2);
+    expect(_painter(tester, renderer).hasCharacterLayer, isFalse);
     final String shaderSource = File(
       'shaders/holographic_card.frag',
     ).readAsStringSync();
+    expect(shaderSource, contains('uniform float uLayeredCharacter;'));
+    expect(shaderSource, contains('uniform sampler2D uCharacter;'));
     expect(
       shaderSource,
-      contains('float cardMask = texture(uCardMask, point).a;'),
+      contains('float activePower = uPower * uEffectActivation;'),
     );
-    expect(shaderSource, contains('float finalAlpha = cardMask;'));
 
     final Rect card = tester.getRect(renderer);
     final TestGesture gesture = await tester.startGesture(
@@ -76,6 +78,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'enables independent character depth when character is supplied',
+    (WidgetTester tester) async {
+      final MemoryImage image = MemoryImage(_whitePng());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 250,
+                height: 350,
+                child: HolographicCard(
+                  cardImage: image,
+                  backgroundImage: image,
+                  foregroundImage: image,
+                  characterImage: image,
+                  characterContourImage: image,
+                  characterBloomImage: image,
+                  depth: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final Finder renderer = find.byKey(
+        const ValueKey('holographic-card-renderer'),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      for (
+        int attempt = 0;
+        attempt < 30 && renderer.evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(renderer, findsOneWidget);
+      expect(_painter(tester, renderer).hasCharacterLayer, isTrue);
+      final Stack surface = tester.widget<Stack>(
+        find.descendant(of: renderer, matching: find.byType(Stack)),
+      );
+      expect(surface.clipBehavior, Clip.none);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 HolographicCardPainter _painter(WidgetTester tester, Finder renderer) {

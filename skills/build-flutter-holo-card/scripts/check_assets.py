@@ -29,6 +29,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path)
     parser.add_argument("--background", required=True, type=Path)
     parser.add_argument("--foreground", required=True, type=Path)
+    parser.add_argument("--character", type=Path)
     parser.add_argument("--opaque-subject-mask", required=True, type=Path)
     parser.add_argument("--contour", required=True, type=Path)
     parser.add_argument("--bloom", required=True, type=Path)
@@ -37,6 +38,11 @@ def main() -> int:
 
     background = ImageOps.exif_transpose(Image.open(args.background)).convert("RGBA")
     foreground = ImageOps.exif_transpose(Image.open(args.foreground)).convert("RGBA")
+    character = (
+        ImageOps.exif_transpose(Image.open(args.character)).convert("RGBA")
+        if args.character
+        else None
+    )
     opaque_subject_mask = ImageOps.exif_transpose(
         Image.open(args.opaque_subject_mask)
     ).convert("L")
@@ -48,6 +54,8 @@ def main() -> int:
         "contour": contour,
         "bloom": bloom,
     }
+    if character is not None:
+        images["character"] = character
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -57,18 +65,24 @@ def main() -> int:
 
     subject_coverage = coverage(opaque_subject_mask)
     subject_fully_opaque = False
-    if opaque_subject_mask.size != foreground.size:
-        errors.append("Opaque subject mask canvas differs from foreground")
+    subject_layer = character if character is not None else foreground
+    effect_mode = "layered-3d" if character is not None else "merged-2d"
+    if opaque_subject_mask.size != subject_layer.size:
+        errors.append("Opaque subject mask canvas differs from its subject layer")
     elif subject_coverage <= 0.001:
         errors.append("Opaque subject mask is empty")
     else:
-        foreground_alpha_pixels = np.asarray(alpha(foreground), dtype=np.uint8)
+        foreground_alpha_pixels = np.asarray(alpha(subject_layer), dtype=np.uint8)
         subject_pixels = np.asarray(opaque_subject_mask, dtype=np.uint8) >= 128
         subject_fully_opaque = bool(
             np.all(foreground_alpha_pixels[subject_pixels] == 255)
         )
         if not subject_fully_opaque:
-            errors.append("Main subject contains transparent foreground pixels")
+            errors.append(
+                "Main subject contains transparent character pixels"
+                if character is not None
+                else "Main subject contains transparent foreground pixels"
+            )
 
     background_alpha = alpha(background)
     background_coverage = coverage(background_alpha)
@@ -82,6 +96,14 @@ def main() -> int:
         errors.append("Foreground alpha is empty")
     elif foreground_coverage >= 0.999:
         errors.append("Foreground has no transparent scenery region")
+
+    character_coverage = None
+    if character is not None:
+        character_coverage = coverage(alpha(character))
+        if character_coverage <= 0.001:
+            errors.append("Character alpha is empty")
+        elif character_coverage >= 0.9:
+            errors.append("Character retains too much non-character canvas")
 
     source_rgb_preserved = None
     opaque_source_rgb_preserved = None
@@ -123,6 +145,13 @@ def main() -> int:
         errors.append("Contour signal is present but effectively empty")
     elif line_coverage >= 0.12:
         errors.append("Contour coverage is too dense for a foreground highlight map")
+    contour_owner_alpha = alpha(subject_layer)
+    contour_outside_owner = np.logical_and(
+        np.asarray(red, dtype=np.uint8) > 4,
+        np.asarray(contour_owner_alpha, dtype=np.uint8) <= 4,
+    )
+    if contour_outside_owner.any():
+        errors.append("Contour spills outside its character or merged-foreground owner")
 
     bloom_red, bloom_green, bloom_blue, bloom_alpha = bloom.split()
     bloom_enabled = max(
@@ -149,7 +178,16 @@ def main() -> int:
         [
             "Visually confirm that the background contains no subject, text, or frame residue.",
             "Visually confirm the opaque subject mask covers every source-visible main-subject pixel and nothing else.",
-            "Visually confirm foreground contains only the fully opaque main subject, subject-linked elements that orbit, surround, frame, overlap, or are emitted or controlled by it, the card frame, panels, and information; reject unrelated scenery.",
+            (
+                "Visually confirm character is continuous, fully opaque over every source-visible subject pixel, and contains no scenery, text, panels, or card frame."
+                if character is not None
+                else "Visually confirm foreground contains only the fully opaque main subject, subject-linked elements that orbit, surround, frame, overlap, or are emitted or controlled by it, the card frame, panels, and information; reject unrelated scenery."
+            ),
+            (
+                "Visually confirm foreground contains only source-visible subject-linked effects, interface, text, panels, and frame, with no duplicated character or unrelated scenery."
+                if character is not None
+                else "Merged foreground mode is active; no independent character layer is expected."
+            ),
         ]
     )
     if contour_enabled:
@@ -163,8 +201,14 @@ def main() -> int:
     report = {
         "ok": not errors,
         "canvas": list(foreground.size),
+        "effect_mode": effect_mode,
         "background_coverage": round(background_coverage, 6),
         "foreground_coverage": round(foreground_coverage, 6),
+        "character_coverage": (
+            round(character_coverage, 6)
+            if character_coverage is not None
+            else None
+        ),
         "opaque_subject_coverage": round(subject_coverage, 6),
         "subject_fully_opaque": subject_fully_opaque,
         "source_rgb_preserved": source_rgb_preserved,

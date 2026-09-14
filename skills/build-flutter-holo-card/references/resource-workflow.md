@@ -1,16 +1,29 @@
 # Resource workflow
 
-## Layer contract
+## Effect selection and layer contracts
 
-| Asset | Required content | Required transparency |
+Use layered-3d first for auto. It keeps six runtime images:
+
+| Asset | Layered-3d content | Required transparency |
 |---|---|---|
 | Source | Supplied card, normalized without cropping | Preserve source |
-| Background | Complete scenery only, including repaired concealed regions | Opaque inside the card boundary; exterior rounded corners may stay transparent |
-| Foreground | Original source pixels for the fully opaque main subject, subject-linked visual elements, the subject-specific frame, card interface, and card frame; low-frequency color field plus partial Alpha only for actually translucent non-subject material | Transparent where unrelated scenery remains independently moving, including scenery visible through translucent UI material |
-| Structure | Model-generated smooth white source-faithful contours for the accepted foreground, including visible internal defining lines but excluding lines absent from the source and added shading or texture strokes; neutral black when disabled | Opaque black canvas |
-| Bloom | Near blur in R, wide blur in G, B=0; neutral black when disabled | Opaque |
+| Background | Complete repaired scenery only | Opaque inside the card boundary |
+| Character | One continuous colored main subject with attached details; include subject-linked effects only when they move compositionally with the subject | Transparent outside character/effects; every source-visible subject pixel is Alpha 255 |
+| Foreground | Original source pixels for interface, text, panels, frame, and subject-linked effects not assigned to character | Transparent outside retained upper-layer material |
+| Structure | Source-faithful contours derived only from character | Opaque black canvas |
+| Bloom | Near blur in R, wide blur in G, B=0 | Opaque |
 
-The character and card interface intentionally share one runtime depth. A temporary subject or UI selection mask may be used while preparing resources, but do not expose another moving character layer.
+Merged-2d is the five-image fallback:
+
+| Asset | Merged-2d content | Required transparency |
+|---|---|---|
+| Source | Supplied card, normalized without cropping | Preserve source |
+| Background | Complete repaired scenery only | Opaque inside the card boundary |
+| Foreground | Original source pixels for the fully opaque visible subject, subject-linked effects, interface, panels, and frame | Transparent where scenery remains independently moving |
+| Structure | Source-faithful contours derived from merged foreground | Opaque black canvas |
+| Bloom | Near blur in R, wide blur in G, B=0 | Opaque |
+
+Never retain the main subject in both character.png and foreground.png. That duplicates it as soon as parallax begins.
 
 ## Background generation prompt
 
@@ -20,7 +33,33 @@ Use the source as the only geometry reference:
 
 Reject a result containing a faint subject, empty silhouette, text ghost, frame fragment, or unrelated redesign.
 
-## Foreground selection plates
+## Layered-3d character
+
+Use the source as the geometry reference and generate one colored character plate:
+
+> Prepare one continuous colored illustrated character layer on the exact full-card canvas for parallax compositing. Preserve every source-visible feature, color, texture, contour, pose, position, overlap, and scale. Keep attached hair, fur, tails, clothes, handheld objects, and accessories. Keep a subject-linked ring, aura, emitted effect, or subject-dedicated visual element with the character only when it must share the character's motion; otherwise assign it to the upper foreground. Exclude scenery, typography, numbers, panels, logos, credits, decorative card frame, and editorial inset portraits. Where a small interface crossing interrupts the character, continue only the local shape and color continuity already established by immediately adjacent visible artwork so the layer does not split during parallax. Do not infer identity, reconstruct broad hidden anatomy, add unrelated content, redesign visible artwork, crop, recenter, rotate, or rescale. Place only the character layer over genuine transparency or one uniform chroma-green matte.
+
+This branch has a stricter visual gate than the fallback. Reject any changed visible face, hand, limb, clothing, accessory, effect, pose, line, color, or scale. Reject missing fragments, broad invented hidden content, scenery/UI/frame contamination, or inconsistent geometry across an interface crossing.
+
+Generate character-visible-selection.png from the source:
+
+> Produce a strictly registered pure black-and-white source-visible main-subject selection on the complete source canvas. White covers every visible pixel of the main illustrated subject and any subject-linked effect assigned to the character layer. Black covers scenery, interface, text, panels, frame, and every hidden or merely inferred region. Do not feather, shade, add gray, crop, recenter, or complete concealed anatomy.
+
+If the colored character has no useful Alpha, also generate character-selection.png from the colored result, not from a different composition:
+
+> Keep the generated character artwork and exact canvas unchanged. Replace only its outside matte with one flat saturated chroma green. Keep every character and assigned effect pixel non-green, including enclosed gaps and detached effect fragments. Do not repaint, shift, simplify, crop, or add content.
+
+Normalize it with prepare_generated_character.py. A non-zero missing-visible coverage fails the branch; do not use the hard opacity lock to disguise missing generated artwork. Inspect the color result, black/white composites, and edge overlay before accepting it.
+
+## Layered-3d upper foreground
+
+Build foreground.png from source pixels only. Include interface, typography, numbers, panels, logos, credits, decorative card frame, editorial inset portraits, and subject-linked effects assigned above the character. Exclude the main character, every effect already assigned to character.png, and all scenery.
+
+Generate the same chroma presence and optional three-state opacity plates described below, but target only this upper foreground. Run prepare_foreground.py with --layer-role interface and without the opaque-subject arguments. Opaque output pixels must remain exact source RGB. Translucent interface material may use the existing three-state decontamination branch.
+
+Accept the primary split only when the flat composite exactly restores the source-visible card and tilted review shows no duplicated subject, missing UI, or scenery attached to the upper foreground. If either character or upper foreground fails, delete the failed primary outputs, record the reason, and continue with merged-2d.
+
+## Merged-2d fallback foreground selection plates
 
 The foreground is a semantic composition, not every decorative pixel above the scenery. Include:
 
@@ -54,6 +93,8 @@ Generate one flat three-state opacity plate at the exact source canvas:
 
 > Produce a strictly registered three-tone foreground-opacity plate on the complete source canvas. Use pure black for independently moving scenery, including every scenery pixel visibly seen through a transparent frame or translucent information panel. Use uniform middle gray (#808080) only for the translucent UI material itself. Use pure white for opaque foreground pixels: the character, opaque effects, typography, symbols, logos, credits, opaque panel parts, and opaque frame strokes. When text sits on an opaque panel, make both white. When text has no backing, keep the text white and its surrounding scenery black. When text sits on translucent material, make the text and opaque strokes white, the material gray, and the scenery visible through it black. Preserve exact canvas, positions, silhouettes, overlaps, and layer order. Do not copy scenery colors into the mask, invent panels, flatten transparent material to white, or use gradients, shading, glow, texture, color, crop, or recentering.
 
+For layered-3d upper foreground, override the character clause above: make the character black because it belongs to character.png, and make white only the opaque effects, interface, panels, information, and frame assigned to foreground.png. For merged-2d, keep the character white.
+
 Run:
 
 ```bash
@@ -79,11 +120,11 @@ When the cut around a limb, garment, hair or fur strand, subject-linked effect, 
 
 ## Source-faithful contour highlight
 
-Use the accepted transparent `foreground.png` as the edit target. `Contour-only` is a provenance and rendering rule: keep lines that are visibly present in the source and omit filled shading or synthesized texture. It is not a positional rule and never means external silhouette only. A line must not be rejected merely because it lies inside the subject.
+Use character.png as the edit target in layered-3d and foreground.png in merged-2d. Contour-only is a provenance and rendering rule: keep lines visibly present in the accepted owner and omit filled shading or synthesized texture. It is not a positional rule and never means external silhouette only. A line must not be rejected merely because it lies inside the subject.
 
 Generate one source-faithful line transformation rather than asking the model to identify, isolate, beautify, or reconstruct a character:
 
-> Convert the visible non-transparent foreground into a pure luminous source-faithful line drawing. Preserve contours already visibly present in the supplied foreground: outer silhouettes; visible overlap and separation boundaries; and internal defining contours such as eyes, mouths, facial or cheek markings, fingers, hair or fur locks, garment seams and folds, existing pattern outlines, typography, numbers, symbols, subject-linked effect lines, information-panel borders, logos, subject-frame details, and card-frame details. These source-visible internal contours are valid and must not be removed or rejected merely because they are internal, facial, anatomical, textile, decorative, or part of the interface. Preserve the complete original canvas, aspect ratio, framing, scale, positions, overlaps, and transparent negative spaces. Use only thin, smooth, continuous white antialiased lines on a genuinely transparent background. Never create a line absent from the source, infer a line behind an occlusion, invent anatomy or features, add eyelashes or fur strokes, add garment folds or patterns, or introduce shading, cross-hatching, halftone, noise, highlight texture, material texture, filled regions, gray shading, paper texture, glow blur, shadows, or a watermark. Do not crop, recenter, rotate, stretch, rearrange, add content, complete concealed shapes, or reconstruct hidden anatomy.
+> Convert the visible non-transparent contour owner into a pure luminous source-faithful line drawing. Preserve contours already visibly present in that owner: outer silhouettes; visible overlap and separation boundaries; and internal defining contours such as eyes, mouths, facial or cheek markings, fingers, hair or fur locks, garment seams and folds, existing pattern outlines, typography, numbers, symbols, subject-linked effect lines, information-panel borders, logos, subject-frame details, and card-frame details when those elements actually belong to the selected owner. These source-visible internal contours are valid and must not be removed or rejected merely because they are internal, facial, anatomical, textile, decorative, or part of the interface. Preserve the complete original canvas, aspect ratio, framing, scale, positions, overlaps, and transparent negative spaces. Use only thin, smooth, continuous white antialiased lines on a genuinely transparent background. Never create a line absent from the owner, infer a line behind an occlusion, invent anatomy or features, add eyelashes or fur strokes, add garment folds or patterns, or introduce shading, cross-hatching, halftone, noise, highlight texture, material texture, filled regions, gray shading, paper texture, glow blur, shadows, or a watermark. Do not crop, recenter, rotate, stretch, rearrange, add content, complete concealed shapes, or reconstruct hidden anatomy.
 
 Positive examples are a visible eye rim, mouth line, cheek-mark boundary, finger separation, garment seam, or printed pattern outline already present in the source. Negative examples are a new eyelash, a reconstructed hidden finger, extra fur strands, an invented clothing fold, or hatching added to suggest volume.
 
@@ -112,19 +153,19 @@ python scripts/prepare_structure_maps.py \
   --output-bloom character_bloom.png
 ```
 
-The neutral files preserve the fixed five-asset runtime contract. Existing Flutter and Shader code can keep loading and sampling them; all contour and bloom samples evaluate to zero.
+The neutral files preserve the selected five- or six-asset runtime contract. Existing Flutter and Shader code keeps loading and sampling them; all contour and bloom samples evaluate to zero.
 
-Keep the accepted normalized original as `source.png`; it is the runtime fallback and static card-shape Alpha mask. All other source copies, selection plates, subject-opacity masks, per-stage previews, alignment overlays, aligned structures, and JSON reports are temporary. After the final checker passes, use `cleanup_assets.py`; leave exactly `source.png` plus the four derived runtime images.
+Keep the accepted normalized original as source.png; it is the runtime fallback and static card-shape Alpha mask. All other source copies, selection plates, subject-opacity masks, per-stage previews, alignment overlays, aligned structures, and JSON reports are temporary. After the final checker passes, use cleanup_assets.py with the effective mode; leave six runtime images for layered-3d or five for merged-2d.
 
 ## Alignment
 
-The source, foreground, structure, and bloom always occupy the same full canvas. Never align independently cropped bounding boxes.
+The source, selected contour owner, structure, and bloom always occupy the same full canvas. Never align independently cropped bounding boxes.
 
-1. Create a red structure overlay on the foreground with `prepare_structure_maps.py --output-overlay`.
-2. Check the subject silhouette, source-visible internal defining contours, subject-linked effects, typography, panels, and long frame runs. Accept registered internal contours; reject only missing, displaced, hidden-completion, or model-invented lines and added shading or texture strokes.
+1. Create a red structure overlay on character in layered-3d or foreground in merged-2d with prepare_structure_maps.py --output-overlay.
+2. Check the owner silhouette and source-visible internal defining contours. In layered-3d, structure must not include UI, panels, text, or frame. Accept registered internal contours; reject missing, displaced, wrong-owner, hidden-completion, or model-invented lines and added shading or texture strokes.
 3. Run `calibrate_structure.py` to estimate one safe full-canvas affine from the generated contour drawing to original source edges. Record its six forward coefficients and correlation report.
 4. Prefer rejection and regeneration when local geometry changes. Automatic or manual affine is only for uniform framing drift.
-5. Do not apply a UI occlusion mask: UI, text, panels, effects, and frame are intentionally part of this highlight layer.
+5. Do not bake a separate UI occlusion mask into the contour file. In layered-3d, the shader masks character emission with live foreground Alpha; in merged-2d, interface and subject already share the contour owner.
 
 ## Map preparation
 

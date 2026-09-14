@@ -13,6 +13,7 @@ class HolographicCard extends StatefulWidget {
     required this.foregroundImage,
     required this.characterContourImage,
     required this.characterBloomImage,
+    this.characterImage,
     this.shaderAssetPath = 'shaders/holographic_card.frag',
     this.depth = 0,
     this.effectStrength = 1,
@@ -30,6 +31,7 @@ class HolographicCard extends StatefulWidget {
   final ImageProvider cardImage;
   final ImageProvider backgroundImage;
   final ImageProvider foregroundImage;
+  final ImageProvider? characterImage;
   final ImageProvider characterContourImage;
   final ImageProvider characterBloomImage;
   final String shaderAssetPath;
@@ -45,14 +47,19 @@ class HolographicCard extends StatefulWidget {
 }
 
 class _HolographicCardState extends State<HolographicCard>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _returnController;
+  late final AnimationController _effectController;
 
   _Resources? _resources;
   Offset _tilt = Offset.zero;
   Offset? _dragStartPosition;
   Offset? _dragStartTilt;
   Animation<Offset>? _returnAnimation;
+  double _effectActivation = 0;
+  double _effectStartActivation = 0;
+  double _effectTargetActivation = 0;
+  Curve _effectCurve = Curves.linear;
   int _loadGeneration = 0;
 
   @override
@@ -62,6 +69,10 @@ class _HolographicCardState extends State<HolographicCard>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     )..addListener(_handleReturn);
+    _effectController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    )..addListener(_handleEffectTransition);
   }
 
   @override
@@ -78,6 +89,7 @@ class _HolographicCardState extends State<HolographicCard>
     if (oldWidget.cardImage != widget.cardImage ||
         oldWidget.backgroundImage != widget.backgroundImage ||
         oldWidget.foregroundImage != widget.foregroundImage ||
+        oldWidget.characterImage != widget.characterImage ||
         oldWidget.characterContourImage != widget.characterContourImage ||
         oldWidget.characterBloomImage != widget.characterBloomImage ||
         oldWidget.shaderAssetPath != widget.shaderAssetPath) {
@@ -120,24 +132,31 @@ class _HolographicCardState extends State<HolographicCard>
   Future<_Resources> _loadResources(ImageConfiguration configuration) async {
     final List<ui.Image> loadedImages = [];
     try {
-      for (final ImageProvider provider in <ImageProvider>[
-        widget.cardImage,
-        widget.backgroundImage,
-        widget.foregroundImage,
-        widget.characterContourImage,
-        widget.characterBloomImage,
-      ]) {
-        loadedImages.add(await _loadImage(provider, configuration));
+      Future<ui.Image> load(ImageProvider provider) async {
+        final ui.Image image = await _loadImage(provider, configuration);
+        loadedImages.add(image);
+        return image;
       }
+
+      final ui.Image cardMaskImage = await load(widget.cardImage);
+      final ui.Image backgroundImage = await load(widget.backgroundImage);
+      final ui.Image foregroundImage = await load(widget.foregroundImage);
+      final ImageProvider? characterProvider = widget.characterImage;
+      final ui.Image? characterImage = characterProvider == null
+          ? null
+          : await load(characterProvider);
+      final ui.Image contourImage = await load(widget.characterContourImage);
+      final ui.Image bloomImage = await load(widget.characterBloomImage);
       final ui.FragmentProgram program = await ui.FragmentProgram.fromAsset(
         widget.shaderAssetPath,
       );
       return _Resources(
-        cardMaskImage: loadedImages[0],
-        backgroundImage: loadedImages[1],
-        foregroundImage: loadedImages[2],
-        contourImage: loadedImages[3],
-        bloomImage: loadedImages[4],
+        cardMaskImage: cardMaskImage,
+        backgroundImage: backgroundImage,
+        foregroundImage: foregroundImage,
+        characterImage: characterImage,
+        contourImage: contourImage,
+        bloomImage: bloomImage,
         shader: program.fragmentShader(),
       );
     } catch (_) {
@@ -196,13 +215,6 @@ class _HolographicCardState extends State<HolographicCard>
     _returnAnimation = null;
     _dragStartPosition = localPosition;
     _dragStartTilt = _tilt;
-    final Offset next = Offset(
-      (localPosition.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
-      _tilt.dy,
-    );
-    if (next != _tilt) {
-      setState(() => _tilt = next);
-    }
   }
 
   void _updateDrag(Offset localPosition, Size size) {
@@ -212,7 +224,8 @@ class _HolographicCardState extends State<HolographicCard>
     final Offset startPosition = _dragStartPosition ?? localPosition;
     final Offset startTilt = _dragStartTilt ?? _tilt;
     final Offset next = Offset(
-      (localPosition.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
+      (startTilt.dx + (localPosition.dx - startPosition.dx) / size.width * 2)
+          .clamp(-1.0, 1.0),
       (startTilt.dy + (startPosition.dy - localPosition.dy) / size.height * 2)
           .clamp(-1.0, 1.0),
     );
@@ -244,11 +257,53 @@ class _HolographicCardState extends State<HolographicCard>
     }
   }
 
+  void _activateEffect() {
+    _startEffectTransition(
+      targetActivation: 1,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _deactivateEffect() {
+    _startEffectTransition(
+      targetActivation: 0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _startEffectTransition({
+    required double targetActivation,
+    required Duration duration,
+    required Curve curve,
+  }) {
+    _effectController
+      ..stop()
+      ..duration = duration;
+    _effectStartActivation = _effectActivation;
+    _effectTargetActivation = targetActivation;
+    _effectCurve = curve;
+    _effectController.forward(from: 0);
+  }
+
+  void _handleEffectTransition() {
+    final double progress = _effectCurve.transform(_effectController.value);
+    setState(() {
+      _effectActivation = ui.lerpDouble(
+        _effectStartActivation,
+        _effectTargetActivation,
+        progress,
+      )!;
+    });
+  }
+
   @override
   void dispose() {
     _loadGeneration++;
     _resources?.dispose();
     _returnController.dispose();
+    _effectController.dispose();
     super.dispose();
   }
 
@@ -291,35 +346,60 @@ class _HolographicCardState extends State<HolographicCard>
           image: true,
           label: widget.semanticLabel,
           child: MouseRegion(
+            onEnter: (_) => _activateEffect(),
             onHover: (event) => _updateHover(event.localPosition, size),
-            onExit: (_) => _resetTilt(),
-            child: GestureDetector(
+            onExit: (_) {
+              _resetTilt();
+              _deactivateEffect();
+            },
+            child: Listener(
               behavior: HitTestBehavior.opaque,
-              onPanDown: (details) => _beginDrag(details.localPosition, size),
-              onPanUpdate: (details) =>
-                  _updateDrag(details.localPosition, size),
-              onPanEnd: (_) => _endDrag(),
-              onPanCancel: _endDrag,
-              child: Transform(
-                key: const ValueKey('holographic-card-transform'),
-                alignment: Alignment.center,
-                transform: perspective,
-                child: RepaintBoundary(
-                  key: const ValueKey('holographic-card-renderer'),
-                  child: CustomPaint(
-                    painter: HolographicCardPainter(
-                      shader: resources.shader,
-                      cardMaskImage: resources.cardMaskImage,
-                      backgroundImage: resources.backgroundImage,
-                      foregroundImage: resources.foregroundImage,
-                      characterContourImage: resources.contourImage,
-                      characterBloomImage: resources.bloomImage,
-                      view: shaderView,
-                      depth: widget.depth,
-                      effectStrength: widget.effectStrength,
-                      contourGlowStrength: widget.contourGlowStrength,
-                    ),
-                    child: const SizedBox.expand(),
+              onPointerDown: (event) {
+                _beginDrag(event.localPosition, size);
+                _activateEffect();
+              },
+              onPointerUp: (_) {
+                _endDrag();
+                _deactivateEffect();
+              },
+              onPointerCancel: (_) {
+                _endDrag();
+                _deactivateEffect();
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: (details) =>
+                    _updateDrag(details.localPosition, size),
+                child: Transform(
+                  key: const ValueKey('holographic-card-transform'),
+                  alignment: Alignment.center,
+                  transform: perspective,
+                  child: RepaintBoundary(
+                    key: const ValueKey('holographic-card-renderer'),
+                    child: resources.hasCharacterLayer
+                        ? Stack(
+                            clipBehavior: Clip.none,
+                            fit: StackFit.expand,
+                            children: [
+                              Positioned(
+                                left: -size.width * 0.3,
+                                top: -size.height * 0.3,
+                                width: size.width * 1.6,
+                                height: size.height * 1.6,
+                                child: CustomPaint(
+                                  painter: _createPainter(
+                                    resources,
+                                    shaderView,
+                                  ),
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
+                            ],
+                          )
+                        : CustomPaint(
+                            painter: _createPainter(resources, shaderView),
+                            child: const SizedBox.expand(),
+                          ),
                   ),
                 ),
               ),
@@ -329,6 +409,27 @@ class _HolographicCardState extends State<HolographicCard>
       },
     );
   }
+
+  HolographicCardPainter _createPainter(
+    _Resources resources,
+    Offset shaderView,
+  ) {
+    return HolographicCardPainter(
+      shader: resources.shader,
+      cardMaskImage: resources.cardMaskImage,
+      backgroundImage: resources.backgroundImage,
+      foregroundImage: resources.foregroundImage,
+      characterImage: resources.characterImage ?? resources.foregroundImage,
+      characterContourImage: resources.contourImage,
+      characterBloomImage: resources.bloomImage,
+      view: shaderView,
+      depth: widget.depth,
+      effectStrength: widget.effectStrength,
+      contourGlowStrength: widget.contourGlowStrength,
+      effectActivation: _effectActivation,
+      hasCharacterLayer: resources.hasCharacterLayer,
+    );
+  }
 }
 
 class _Resources {
@@ -336,6 +437,7 @@ class _Resources {
     required this.cardMaskImage,
     required this.backgroundImage,
     required this.foregroundImage,
+    required this.characterImage,
     required this.contourImage,
     required this.bloomImage,
     required this.shader,
@@ -344,14 +446,18 @@ class _Resources {
   final ui.Image cardMaskImage;
   final ui.Image backgroundImage;
   final ui.Image foregroundImage;
+  final ui.Image? characterImage;
   final ui.Image contourImage;
   final ui.Image bloomImage;
   final ui.FragmentShader shader;
+
+  bool get hasCharacterLayer => characterImage != null;
 
   void dispose() {
     cardMaskImage.dispose();
     backgroundImage.dispose();
     foregroundImage.dispose();
+    characterImage?.dispose();
     contourImage.dispose();
     bloomImage.dispose();
     shader.dispose();

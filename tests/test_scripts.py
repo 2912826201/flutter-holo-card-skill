@@ -16,6 +16,31 @@ SCRIPTS = ROOT / "skills" / "build-flutter-holo-card" / "scripts"
 
 
 class ScriptTests(unittest.TestCase):
+    def test_effect_modes_prefer_layered_and_define_fallback(self) -> None:
+        skill = (
+            ROOT / "skills" / "build-flutter-holo-card" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        shader = (
+            ROOT
+            / "skills"
+            / "build-flutter-holo-card"
+            / "assets"
+            / "flutter"
+            / "shaders"
+            / "holographic_card.frag"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("effect=auto (default)", skill)
+        self.assertIn("Attempt layered-3d first", skill)
+        self.assertIn("continue with merged-2d", skill)
+        self.assertIn("requested_effect", skill)
+        self.assertIn("effect=layered-3d", readme)
+        self.assertIn("effect=merged-2d", readme)
+        self.assertIn("uniform float uLayeredCharacter;", shader)
+        self.assertIn("uniform sampler2D uCharacter;", shader)
+        self.assertIn("(outputPoint - vec2(0.5)) * 1.6", shader)
+
     def test_contour_contract_is_source_based_not_outer_silhouette_only(self) -> None:
         skill = (
             ROOT / "skills" / "build-flutter-holo-card" / "SKILL.md"
@@ -134,6 +159,88 @@ class ScriptTests(unittest.TestCase):
             self.assertNotEqual(cleaned.returncode, 0)
             self.assertIn("source.png", cleaned.stderr)
             self.assertTrue((root / "alignment-overlay.png").is_file())
+
+    def test_cleanup_assets_keeps_six_layered_runtime_images(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final_names = (
+                "source.png",
+                "background.png",
+                "character.png",
+                "foreground.png",
+                "character_contour.png",
+                "character_bloom.png",
+            )
+            for name in final_names:
+                (root / name).write_bytes(b"final")
+            (root / "character-on-black.png").write_bytes(b"temporary")
+            (root / "character-report.json").write_bytes(b"temporary")
+
+            cleaned = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "cleanup_assets.py"),
+                    "--output-dir",
+                    str(root),
+                    "--effect-mode",
+                    "layered-3d",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(cleaned.stdout)
+            self.assertEqual(report["effect_mode"], "layered-3d")
+            self.assertFalse((root / "character-on-black.png").exists())
+            self.assertFalse((root / "character-report.json").exists())
+            for name in final_names:
+                self.assertTrue((root / name).is_file())
+
+    def test_prepare_generated_character_preserves_visible_opaque_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            generated = root / "generated.png"
+            visible = root / "visible.png"
+            output = root / "character.png"
+            output_mask = root / "subject-mask.png"
+
+            Image.new("RGBA", (100, 140), (40, 60, 80, 255)).save(source)
+            generated_image = Image.new("RGBA", (100, 140), (0, 0, 0, 0))
+            ImageDraw.Draw(generated_image).ellipse(
+                (20, 20, 80, 120), fill=(230, 150, 80, 255)
+            )
+            generated_image.save(generated)
+            visible_image = Image.new("L", (100, 140), 0)
+            ImageDraw.Draw(visible_image).ellipse((24, 24, 76, 116), fill=255)
+            visible_image.save(visible)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_generated_character.py"),
+                    "--source",
+                    str(source),
+                    "--character",
+                    str(generated),
+                    "--visible-subject-selection",
+                    str(visible),
+                    "--output-character",
+                    str(output),
+                    "--output-visible-subject-mask",
+                    str(output_mask),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            self.assertTrue(report["ok"])
+            self.assertTrue(report["visible_subject_fully_opaque"])
+            self.assertEqual(report["visible_subject_missing_coverage"], 0)
+            final_alpha = np.asarray(Image.open(output).getchannel("A"))
+            visible_pixels = np.asarray(Image.open(output_mask)) >= 128
+            self.assertTrue(np.all(final_alpha[visible_pixels] == 255))
 
     def test_calibrate_structure_recovers_small_global_drift(self) -> None:
         try:
@@ -346,6 +453,88 @@ class ScriptTests(unittest.TestCase):
             check_report = json.loads(checked.stdout)
             self.assertTrue(check_report["ok"])
             self.assertFalse(check_report["contour_enabled"])
+
+    def test_check_assets_accepts_independent_character_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            background = root / "background.png"
+            foreground = root / "foreground.png"
+            character = root / "character.png"
+            subject_mask = root / "subject-mask.png"
+            structure = root / "structure.png"
+            contour = root / "character_contour.png"
+            bloom = root / "character_bloom.png"
+
+            source_image = Image.new("RGBA", (100, 140), (70, 90, 120, 255))
+            source_image.save(source)
+            source_image.save(background)
+
+            foreground_image = source_image.copy()
+            foreground_alpha = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(foreground_alpha).rectangle((4, 4, 95, 15), fill=255)
+            foreground_image.putalpha(foreground_alpha)
+            foreground_image.save(foreground)
+
+            character_image = Image.new("RGBA", source_image.size, (0, 0, 0, 0))
+            ImageDraw.Draw(character_image).ellipse(
+                (25, 25, 75, 115), fill=(220, 150, 90, 255)
+            )
+            character_image.save(character)
+            subject_mask_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject_mask_image).ellipse((28, 28, 72, 112), fill=255)
+            subject_mask_image.save(subject_mask)
+            structure_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(structure_image).ellipse(
+                (25, 25, 75, 115), outline=255, width=1
+            )
+            structure_image.save(structure)
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_structure_maps.py"),
+                    "--foreground",
+                    str(character),
+                    "--structure",
+                    str(structure),
+                    "--output-contour",
+                    str(contour),
+                    "--output-bloom",
+                    str(bloom),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            checked = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "check_assets.py"),
+                    "--source",
+                    str(source),
+                    "--background",
+                    str(background),
+                    "--foreground",
+                    str(foreground),
+                    "--character",
+                    str(character),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
+                    "--contour",
+                    str(contour),
+                    "--bloom",
+                    str(bloom),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(checked.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(report["effect_mode"], "layered-3d")
+            self.assertTrue(report["subject_fully_opaque"])
+            self.assertIsNotNone(report["character_coverage"])
 
     def test_normalize_source_preserves_aspect_without_crop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

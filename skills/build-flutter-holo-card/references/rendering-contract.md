@@ -2,9 +2,12 @@
 
 ## Layer order and UVs
 
-Render `background -> merged foreground -> view-dependent material and contour-line emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and line emission only where the source-faithful contour map and foreground alpha overlap. The foreground contains the fully opaque main subject, subject-linked elements, typography, panels, symbols, and frame at one signed depth. The contour map may include registered source-visible internal defining lines such as facial features, fingers, garment seams, existing patterns, typography, and interface details; it excludes only lines absent from the source and strokes added for shading or texture.
+Support both contracts:
 
-Load the supplied source card as a fifth static sampler and use only its Alpha as the final card-shape mask. The repaired background is intentionally opaque for parallax sampling and must never define the outer silhouette. Multiply the final premultiplied color and Alpha by the static source mask so the background, shifted foreground, foil, glare, stars, contour, and bloom all share the exact antialiased card corners.
+- layered-3d: render background -> character -> interface/frame foreground. Apply contour and bloom to character before interface compositing so interface Alpha occludes both.
+- merged-2d: render background -> merged foreground and apply contour/bloom to that foreground.
+
+Load source Alpha as the static card shape. It clips background in both modes and clips the complete merged-2d result. In layered-3d, a 160% transparent painter surface maps output coordinates through p=(uv-.5)*1.6+.5; only positive-depth character and interface pixels may extend beyond the static mask. Never let repaired-background Alpha define the card shape.
 
 Use one normalized view vector for every internal effect:
 
@@ -16,11 +19,12 @@ view.y = sin(rotateX) * 0.65 * sensitivity
 Clamp only after applying sensitivity. A useful default for small Flutter tilt is `2.4`, independently adjustable from physical rotation.
 
 ```glsl
-vec2 foregroundUv = p - view * (depth < 0.0 ? 0.06 : 0.08) * depth;
+vec2 characterUv = p - view * (depth < 0.0 ? 0.06 : 0.08) * depth;
+vec2 interfaceUv = p - view * 0.14 * max(depth, 0.0);
 vec2 backgroundUv = (p - 0.5) * 0.5 + 0.5 - view * 0.25;
 ```
 
-Sample foreground, contour, and bloom at exactly `foregroundUv`. Never fit or offset contour separately.
+In layered-3d, sample character, contour, and bloom at characterUv and foreground at interfaceUv. In merged-2d, sample foreground, contour, and bloom at characterUv. Never fit or offset contour separately.
 
 ## Foil and sweep
 
@@ -43,7 +47,9 @@ The contour sampler contains only white line core. The bloom sampler contains ne
 When line generation is unavailable, both files are opaque neutral-black maps. Keep loading and sampling them normally; they disable emission without a shader branch or a different resource contract.
 
 ```glsl
-float line = structure * foregroundAlpha;
+float ownerAlpha = layered ? characterAlpha : foregroundAlpha;
+float uiOcclusion = layered ? 1.0 - foregroundAlpha : 1.0;
+float line = structure * ownerAlpha * uiOcclusion;
 float envelope = smoothstep(0.025, 0.42, light);
 vec3 emissionColor = spectrum * 0.85 + 0.15;
 vec3 emission = emissionColor * line * envelope * power * 40.0 * contourStrength;
@@ -66,15 +72,17 @@ vec3 display = pow(clamp(combined, 0.0, 1.0), vec3(1.0 / 2.2));
 Keep normalized state as `(yaw, pitch)`:
 
 - mouse hover may map both axes from absolute pointer position;
-- touch down maps horizontal position to yaw but preserves current pitch;
-- touch update maps yaw from horizontal position and pitch from vertical displacement since drag start;
+- touch down changes neither axis and records the drag origin;
+- touch update maps both axes from displacement since drag start;
 - touch release animates the current value to zero with an ease-out curve.
 
 This prevents a lower-half touch from immediately pitching the card before the user drags.
 
 ## Required tests
 
-- Shader and all five runtime images load: source card mask plus four derived images.
+- Shader loads with six layered-3d runtime images and five merged-2d images.
+- Optional character input selects layered-3d; its absence selects merged-2d without a second component.
+- Layered-3d uses a 160% unclipped painter surface while merged-2d stays at card bounds.
 - Default, narrow, and wide layouts do not overflow.
 - Drag changes both transform and shader view.
 - Release is continuous before reaching center.

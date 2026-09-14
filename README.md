@@ -10,14 +10,14 @@
 
 ## 它会闪出什么
 
-- 前景与背景会产生反向视差，卡面看起来更有纵深。
+- 默认优先把背景、人物、文字边框拆成三个景深层：背景后退、人物浮起、卡面信息稳稳盖在最上方。
 - 彩虹镭射、斜向扫光和细碎星芒会随观察角度流动，不是简单换几个颜色。
-- 人物、环绕人物的星环与能量环、文字、面板和边框会带上流畅的白色轮廓高光，整张卡一起闪得更完整。
-- 前景会收敛为主体、与主体构图绑定的元素、卡框和卡面信息；普通星点、云雾、树林和环境纹理乖乖留在背景层。人物本体始终保持完全不透明。
+- 独立人物模式会给人物及同层特效加上流畅的白色轮廓高光；双层降级模式则继续覆盖合并前景中的人物、文字、面板和边框。
+- 分层时人物自己占一层，互动特效按遮挡关系放到人物层或上层，卡框和卡面信息留在最上方；普通星点、云雾、树林和环境纹理乖乖留在背景层。人物本体始终保持完全不透明。
 - 线稿按“是否来自原图”判断：原图已有的眼睛、嘴巴、面部标记、手指、毛发轮廓、衣纹和图案轮廓都可以保留；禁止的是凭空补线，以及用排线、噪点或纹理制造素描明暗。如果服务拒绝或结果不可用，就安静关闭线条效果，其他景深和镭射照常工作。
 - 小幅拖动也能带动材质、扫光、轮廓和景深，适合 App 中克制的卡片倾角。
 - 按住、拖动、松手的过渡保持连贯，卡片会自然回正。
-- 背景和前景两层就能完成效果，不需要把人物单独拆成第三个移动图层。
+- 如果人物连续层生成失败，会自动退回背景＋合并前景的双层效果，不会让整次制作卡在半路。
 - 遇到透明边框或半透明信息板时，透过去的景物仍留在背景层，不会被误剪到边框上一起漂移。
 
 ## 谁可以用
@@ -78,12 +78,26 @@ Codex 的默认位置通常是：
 
 Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`CustomPainter` 与 Runtime Shader。示例模板在 `skills/build-flutter-holo-card/assets/flutter`，资源处理脚本在 `skills/build-flutter-holo-card/scripts`。
 
+### 选择效果
+
+可以直接在指令里指定：
+
+```text
+使用 build-flutter-holo-card，asset-only，effect=auto。
+使用 build-flutter-holo-card，生成独立人物景深效果，effect=layered-3d。
+使用 build-flutter-holo-card，只生成背景＋合并前景，effect=merged-2d。
+```
+
+- `auto`：默认，先做独立人物景深，失败再降级。
+- `layered-3d`：明确优先要独立人物层，失败时仍会给出双层降级结果并说明原因。
+- `merged-2d`：直接使用原来的稳定双层方案。
+
 ### 只生成资源图
 
 已经有自己的 Flutter 实现，只想让 Agent 把“闪卡食材”备好吗？可以明确启用仅资源模式：
 
 ```text
-请使用 build-flutter-holo-card 的仅资源模式处理我提供的卡图。只生成并校准 source.png、background.png、foreground.png、character_contour.png 和 character_bloom.png 这五张运行时图片，使用临时对齐预览完成检查并报告结果。不要创建或修改任何 Flutter、Dart、Shader、页面、路由、测试或 pubspec 代码。
+请使用 build-flutter-holo-card 的仅资源模式处理我提供的卡图，effect=auto。优先生成 source.png、background.png、character.png、foreground.png、character_contour.png 和 character_bloom.png；独立人物层失败时降级为不含 character.png 的五图双层方案。使用临时对齐预览完成检查并报告 requested_effect、effective_effect 和降级原因。不要创建或修改任何 Flutter、Dart、Shader、页面、路由、测试或 pubspec 代码。
 ```
 
 在 Codex 中也可以这样说：
@@ -92,7 +106,7 @@ Skill 会准备卡片资源，并给出可接入 Flutter 项目的组件、`Cust
 使用 $build-flutter-holo-card，只生成并校准全息卡所需资源图，不生成或修改代码。
 ```
 
-`alignment-overlay.png` 只在生成阶段用来检查线稿是否贴合。即使线稿生成失败，Skill 也会输出两张全黑中性贴图，因此资源数量和 Flutter 接口都不用切换。验收完成后，Skill 会自动清掉它以及选择板、其他临时预览和校准报告，输出目录只留下五张运行时资源。`source.png` 既负责加载失败时的原图降级，也提供卡片圆角的静态 Alpha 遮罩，所以不能丢。
+`alignment-overlay.png` 只在生成阶段用来检查线稿是否贴合。即使线稿生成失败，Skill 也会输出两张全黑中性贴图。验收完成后，Skill 会自动清掉选择板、临时预览和校准报告：独立人物模式留下六张运行时资源，双层模式留下五张。`source.png` 既负责加载失败时的原图降级，也提供卡片圆角的静态 Alpha 遮罩，所以不能丢。
 
 ## 本地验证
 

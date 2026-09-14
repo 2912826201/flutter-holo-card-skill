@@ -8,24 +8,30 @@ class HolographicCardPainter extends CustomPainter {
     required this.cardMaskImage,
     required this.backgroundImage,
     required this.foregroundImage,
+    required this.characterImage,
     required this.characterContourImage,
     required this.characterBloomImage,
     required this.view,
     required this.depth,
     required this.effectStrength,
     required this.contourGlowStrength,
+    required this.effectActivation,
+    required this.hasCharacterLayer,
   });
 
   final ui.FragmentShader shader;
   final ui.Image cardMaskImage;
   final ui.Image backgroundImage;
   final ui.Image foregroundImage;
+  final ui.Image characterImage;
   final ui.Image characterContourImage;
   final ui.Image characterBloomImage;
   final Offset view;
   final double depth;
   final double effectStrength;
   final double contourGlowStrength;
+  final double effectActivation;
+  final bool hasCharacterLayer;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -41,11 +47,14 @@ class HolographicCardPainter extends CustomPainter {
       ..setFloat(4, depth)
       ..setFloat(5, contourGlowStrength)
       ..setFloat(6, effectStrength)
+      ..setFloat(7, effectActivation)
+      ..setFloat(8, hasCharacterLayer ? 1 : 0)
       ..setImageSampler(0, backgroundImage)
       ..setImageSampler(1, foregroundImage)
-      ..setImageSampler(2, characterContourImage)
-      ..setImageSampler(3, characterBloomImage)
-      ..setImageSampler(4, cardMaskImage);
+      ..setImageSampler(2, characterImage)
+      ..setImageSampler(3, characterContourImage)
+      ..setImageSampler(4, characterBloomImage)
+      ..setImageSampler(5, cardMaskImage);
 
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
@@ -56,11 +65,14 @@ class HolographicCardPainter extends CustomPainter {
         oldDelegate.cardMaskImage != cardMaskImage ||
         oldDelegate.backgroundImage != backgroundImage ||
         oldDelegate.foregroundImage != foregroundImage ||
+        oldDelegate.characterImage != characterImage ||
         oldDelegate.characterContourImage != characterContourImage ||
         oldDelegate.characterBloomImage != characterBloomImage ||
         oldDelegate.view != view ||
         oldDelegate.depth != depth ||
         oldDelegate.effectStrength != effectStrength ||
-        oldDelegate.contourGlowStrength != contourGlowStrength;
+        oldDelegate.contourGlowStrength != contourGlowStrength ||
+        oldDelegate.effectActivation != effectActivation ||
+        oldDelegate.hasCharacterLayer != hasCharacterLayer;
   }
 }

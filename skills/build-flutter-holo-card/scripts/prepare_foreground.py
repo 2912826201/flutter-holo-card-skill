@@ -140,9 +140,14 @@ def main() -> int:
     selection_group.add_argument("--selection", type=Path)
     selection_group.add_argument("--opacity-selection", type=Path)
     parser.add_argument("--presence-selection", type=Path)
-    parser.add_argument("--opaque-subject-selection", required=True, type=Path)
+    parser.add_argument(
+        "--layer-role",
+        choices=("merged", "interface"),
+        default="merged",
+    )
+    parser.add_argument("--opaque-subject-selection", type=Path)
     parser.add_argument("--output-foreground", required=True, type=Path)
-    parser.add_argument("--output-opaque-subject-mask", required=True, type=Path)
+    parser.add_argument("--output-opaque-subject-mask", type=Path)
     parser.add_argument("--output-mask", type=Path)
     parser.add_argument("--output-black-preview", type=Path)
     parser.add_argument("--output-white-preview", type=Path)
@@ -158,20 +163,30 @@ def main() -> int:
         raise ValueError("Translucent alpha must be between 1 and 254")
     if not 0 <= args.material_color_radius <= 160:
         raise ValueError("Material color radius must be between 0 and 160")
+    if args.layer_role == "merged" and (
+        args.opaque_subject_selection is None
+        or args.output_opaque_subject_mask is None
+    ):
+        raise ValueError(
+            "Merged foreground requires --opaque-subject-selection and "
+            "--output-opaque-subject-mask"
+        )
 
     source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
     selection_path = args.opacity_selection or args.selection
     selection = ImageOps.exif_transpose(Image.open(selection_path)).convert("RGB")
     selection = resize_full_canvas(selection, source.size, "Selection")
-    subject_selection_rgb = ImageOps.exif_transpose(
-        Image.open(args.opaque_subject_selection)
-    ).convert("RGB")
-    subject_selection_rgb = resize_full_canvas(
-        subject_selection_rgb, source.size, "Opaque subject selection"
-    )
-    subject_selection = subject_selection_rgb.convert("L").point(
-        lambda value: 255 if value >= 128 else 0
-    )
+    subject_selection = None
+    if args.opaque_subject_selection is not None:
+        subject_selection_rgb = ImageOps.exif_transpose(
+            Image.open(args.opaque_subject_selection)
+        ).convert("RGB")
+        subject_selection_rgb = resize_full_canvas(
+            subject_selection_rgb, source.size, "Opaque subject selection"
+        )
+        subject_selection = subject_selection_rgb.convert("L").point(
+            lambda value: 255 if value >= 128 else 0
+        )
     if args.opacity_selection and not args.presence_selection:
         raise ValueError(
             "Opacity selection requires a chroma --presence-selection"
@@ -233,13 +248,14 @@ def main() -> int:
                 fillcolor=0,
             )
             translucent_pixels = np.asarray(translucent_mask) >= 128
-        subject_selection = subject_selection.transform(
-            source.size,
-            Image.Transform.AFFINE,
-            inverse,
-            resample=Image.Resampling.NEAREST,
-            fillcolor=0,
-        )
+        if subject_selection is not None:
+            subject_selection = subject_selection.transform(
+                source.size,
+                Image.Transform.AFFINE,
+                inverse,
+                resample=Image.Resampling.NEAREST,
+                fillcolor=0,
+            )
 
     if args.feather_radius > 0:
         scale = source.width / 1000.0
@@ -251,10 +267,12 @@ def main() -> int:
     # 人物选择板是最终不透明度的硬约束。它不能替主前景选择板补洞：若主选择
     # 漏掉人物像素则直接报错，要求重新生成选择板，避免误把背景带入前景。
     source_alpha_pixels = np.asarray(source.getchannel("A"), dtype=np.uint8)
-    subject_pixels = np.logical_and(
-        np.asarray(subject_selection, dtype=np.uint8) >= 128,
-        source_alpha_pixels > 0,
-    )
+    subject_pixels = np.zeros(source_alpha_pixels.shape, dtype=bool)
+    if subject_selection is not None:
+        subject_pixels = np.logical_and(
+            np.asarray(subject_selection, dtype=np.uint8) >= 128,
+            source_alpha_pixels > 0,
+        )
     subject_coverage = float(subject_pixels.mean())
     prelock_alpha_pixels = np.asarray(foreground_alpha, dtype=np.uint8)
     missing_subject_pixels = np.logical_and(
@@ -286,7 +304,7 @@ def main() -> int:
     foreground_coverage = float(strong_foreground.mean())
     matte_coverage = 1.0 - foreground_coverage
     errors: list[str] = []
-    if subject_coverage <= 0.001:
+    if args.layer_role == "merged" and subject_coverage <= 0.001:
         errors.append("Opaque subject selection is empty")
     if missing_subject_pixels.any():
         errors.append(
@@ -294,7 +312,8 @@ def main() -> int:
         )
     if matte_coverage < 0.03:
         errors.append("Selection contains too little chroma scenery matte")
-    if matte_coverage > 0.92:
+    maximum_matte_coverage = 0.985 if args.layer_role == "interface" else 0.92
+    if matte_coverage > maximum_matte_coverage:
         errors.append("Selection removes too much of the card")
     if foreground_alpha.getextrema() == (255, 255):
         errors.append("Foreground contains no transparent scenery")
@@ -306,10 +325,11 @@ def main() -> int:
 
     args.output_foreground.parent.mkdir(parents=True, exist_ok=True)
     foreground.save(args.output_foreground)
-    args.output_opaque_subject_mask.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(
-        np.where(subject_pixels, 255, 0).astype(np.uint8), mode="L"
-    ).save(args.output_opaque_subject_mask)
+    if args.output_opaque_subject_mask:
+        args.output_opaque_subject_mask.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(
+            np.where(subject_pixels, 255, 0).astype(np.uint8), mode="L"
+        ).save(args.output_opaque_subject_mask)
     if args.output_mask:
         args.output_mask.parent.mkdir(parents=True, exist_ok=True)
         foreground_alpha.save(args.output_mask)
@@ -342,6 +362,7 @@ def main() -> int:
             else False
         ),
         "scenery_matte_coverage": round(matte_coverage, 6),
+        "layer_role": args.layer_role,
         "selection_mode": selection_mode,
         "presence_selection_used": args.presence_selection is not None,
         "translucent_material_coverage": round(translucent_coverage, 6),
@@ -361,8 +382,16 @@ def main() -> int:
         "affine_applied": args.forward_affine is not None,
         "errors": errors,
         "required_visual_review": [
-            "Inspect black and white previews: the complete visible subject must be solid and no scenery element may appear in foreground.",
-            "Confirm the opaque subject mask contains only the visible main subject, with no scenery, UI, or invented hidden parts.",
+            (
+                "Inspect black and white previews: the complete visible subject must be solid and no scenery element may appear in foreground."
+                if args.layer_role == "merged"
+                else "Inspect black and white previews: keep only source-visible interface, text, panels, subject-linked effects, and frame; exclude the main subject and scenery."
+            ),
+            (
+                "Confirm the opaque subject mask contains only the visible main subject, with no scenery, UI, or invented hidden parts."
+                if args.layer_role == "merged"
+                else "Confirm the interface plate preserves source RGB and never duplicates character pixels."
+            ),
             "For a three-state plate, confirm scenery visible through translucent material is black, the material itself is gray, and opaque text or strokes are white.",
             "Inspect the red edge overlay for local silhouette drift and retained scenery islands.",
             "Reject local anatomy changes; use affine only for uniform full-canvas framing drift.",
