@@ -29,6 +29,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path)
     parser.add_argument("--background", required=True, type=Path)
     parser.add_argument("--foreground", required=True, type=Path)
+    parser.add_argument("--opaque-subject-mask", required=True, type=Path)
     parser.add_argument("--contour", required=True, type=Path)
     parser.add_argument("--bloom", required=True, type=Path)
     parser.add_argument("--occlusion-mask", type=Path)
@@ -36,6 +37,9 @@ def main() -> int:
 
     background = ImageOps.exif_transpose(Image.open(args.background)).convert("RGBA")
     foreground = ImageOps.exif_transpose(Image.open(args.foreground)).convert("RGBA")
+    opaque_subject_mask = ImageOps.exif_transpose(
+        Image.open(args.opaque_subject_mask)
+    ).convert("L")
     contour = ImageOps.exif_transpose(Image.open(args.contour)).convert("RGBA")
     bloom = ImageOps.exif_transpose(Image.open(args.bloom)).convert("RGBA")
     images = {
@@ -50,6 +54,21 @@ def main() -> int:
     sizes = {name: image.size for name, image in images.items()}
     if len(set(sizes.values())) != 1:
         errors.append(f"Canvas mismatch: {sizes}")
+
+    subject_coverage = coverage(opaque_subject_mask)
+    subject_fully_opaque = False
+    if opaque_subject_mask.size != foreground.size:
+        errors.append("Opaque subject mask canvas differs from foreground")
+    elif subject_coverage <= 0.001:
+        errors.append("Opaque subject mask is empty")
+    else:
+        foreground_alpha_pixels = np.asarray(alpha(foreground), dtype=np.uint8)
+        subject_pixels = np.asarray(opaque_subject_mask, dtype=np.uint8) >= 128
+        subject_fully_opaque = bool(
+            np.all(foreground_alpha_pixels[subject_pixels] == 255)
+        )
+        if not subject_fully_opaque:
+            errors.append("Main subject contains transparent foreground pixels")
 
     background_alpha = alpha(background)
     background_coverage = coverage(background_alpha)
@@ -102,7 +121,7 @@ def main() -> int:
     contour_enabled = red.getextrema()[1] > 1
     if contour_enabled and line_coverage <= 0.0001:
         errors.append("Contour signal is present but effectively empty")
-    elif line_coverage >= 0.35:
+    elif line_coverage >= 0.12:
         errors.append("Contour coverage is too dense for a foreground highlight map")
 
     bloom_red, bloom_green, bloom_blue, bloom_alpha = bloom.split()
@@ -129,12 +148,13 @@ def main() -> int:
     warnings.extend(
         [
             "Visually confirm that the background contains no subject, text, or frame residue.",
-            "Visually confirm original foreground RGB and lettering over black and white.",
+            "Visually confirm the opaque subject mask covers every source-visible main-subject pixel and nothing else.",
+            "Visually confirm foreground contains only the fully opaque main subject, subject-linked elements that orbit, surround, frame, overlap, or are emitted or controlled by it, the card frame, panels, and information; reject unrelated scenery.",
         ]
     )
     if contour_enabled:
         warnings.append(
-            "Inspect the red contour overlay for full-foreground line registration."
+            "Inspect the red contour overlay: keep only source-visible silhouettes and overlap or separation contours; reject every invented or decorative internal detail."
         )
     else:
         warnings.append(
@@ -145,6 +165,8 @@ def main() -> int:
         "canvas": list(foreground.size),
         "background_coverage": round(background_coverage, 6),
         "foreground_coverage": round(foreground_coverage, 6),
+        "opaque_subject_coverage": round(subject_coverage, 6),
+        "subject_fully_opaque": subject_fully_opaque,
         "source_rgb_preserved": source_rgb_preserved,
         "opaque_source_rgb_preserved": opaque_source_rgb_preserved,
         "contour_enabled": contour_enabled,

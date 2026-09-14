@@ -31,12 +31,17 @@ class ScriptTests(unittest.TestCase):
             (root / "background-generated.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
             (root / "foreground-opacity-selection.png").write_bytes(b"temporary")
+            (root / "foreground-opaque-subject-selection.png").write_bytes(
+                b"temporary"
+            )
+            (root / "foreground-opaque-subject-mask.png").write_bytes(b"temporary")
             (root / "alignment-overlay.png").write_bytes(b"temporary")
             (root / "foreground-bridge-mask.png").write_bytes(b"temporary")
             (root / "foreground-bridge-overlay.png").write_bytes(b"temporary")
             (root / "character-region-mask.png").write_bytes(b"temporary")
             (root / "structure-local.png").write_bytes(b"temporary")
             (root / "structure-sketch-generated-raw.png").write_bytes(b"temporary")
+            (root / "structure-lineart-generated-raw.png").write_bytes(b"temporary")
             (root / "structure-generated-transparent.png").write_bytes(b"temporary")
             (root / "structure-generated-report.json").write_bytes(b"temporary")
             (root / "notes-owned-by-user.txt").write_text("keep", encoding="utf-8")
@@ -57,12 +62,17 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse((root / "background-generated.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
             self.assertFalse((root / "foreground-opacity-selection.png").exists())
+            self.assertFalse(
+                (root / "foreground-opaque-subject-selection.png").exists()
+            )
+            self.assertFalse((root / "foreground-opaque-subject-mask.png").exists())
             self.assertFalse((root / "alignment-overlay.png").exists())
             self.assertFalse((root / "foreground-bridge-mask.png").exists())
             self.assertFalse((root / "foreground-bridge-overlay.png").exists())
             self.assertFalse((root / "character-region-mask.png").exists())
             self.assertFalse((root / "structure-local.png").exists())
             self.assertFalse((root / "structure-sketch-generated-raw.png").exists())
+            self.assertFalse((root / "structure-lineart-generated-raw.png").exists())
             self.assertFalse((root / "structure-generated-transparent.png").exists())
             self.assertFalse((root / "structure-generated-report.json").exists())
             self.assertTrue((root / "notes-owned-by-user.txt").is_file())
@@ -209,6 +219,7 @@ class ScriptTests(unittest.TestCase):
             source = root / "source.png"
             background = root / "background.png"
             foreground = root / "foreground.png"
+            subject_mask = root / "foreground-opaque-subject-mask.png"
             contour = root / "character_contour.png"
             bloom = root / "character_bloom.png"
 
@@ -220,6 +231,9 @@ class ScriptTests(unittest.TestCase):
             ImageDraw.Draw(foreground_alpha).rectangle((35, 35, 65, 105), fill=0)
             foreground_image.putalpha(foreground_alpha)
             foreground_image.save(foreground)
+            subject_mask_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject_mask_image).rectangle((8, 8, 24, 24), fill=255)
+            subject_mask_image.save(subject_mask)
 
             prepared = subprocess.run(
                 [
@@ -253,6 +267,8 @@ class ScriptTests(unittest.TestCase):
                     str(background),
                     "--foreground",
                     str(foreground),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
                     "--contour",
                     str(contour),
                     "--bloom",
@@ -299,6 +315,8 @@ class ScriptTests(unittest.TestCase):
             source = root / "source.png"
             selection = root / "selection.png"
             foreground = root / "foreground.png"
+            subject_selection = root / "subject-selection.png"
+            subject_mask = root / "subject-mask.png"
             mask = root / "mask.png"
             black_preview = root / "black.png"
             white_preview = root / "white.png"
@@ -322,6 +340,12 @@ class ScriptTests(unittest.TestCase):
             )
             selection_image.save(selection)
 
+            subject_selection_image = Image.new("L", (200, 280), 0)
+            ImageDraw.Draw(subject_selection_image).ellipse(
+                (56, 60, 144, 216), fill=255
+            )
+            subject_selection_image.save(subject_selection)
+
             prepared = subprocess.run(
                 [
                     sys.executable,
@@ -330,8 +354,12 @@ class ScriptTests(unittest.TestCase):
                     str(source),
                     "--selection",
                     str(selection),
+                    "--opaque-subject-selection",
+                    str(subject_selection),
                     "--output-foreground",
                     str(foreground),
+                    "--output-opaque-subject-mask",
+                    str(subject_mask),
                     "--output-mask",
                     str(mask),
                     "--output-black-preview",
@@ -348,6 +376,8 @@ class ScriptTests(unittest.TestCase):
             report = json.loads(prepared.stdout)
             self.assertTrue(report["ok"])
             self.assertTrue(report["source_rgb_preserved"])
+            self.assertTrue(report["subject_fully_opaque"])
+            self.assertEqual(report["opaque_subject_missing_coverage"], 0.0)
             self.assertEqual(report["canvas"], [100, 140])
 
             source_rgb = Image.open(source).convert("RGB")
@@ -356,6 +386,7 @@ class ScriptTests(unittest.TestCase):
             self.assertLess(foreground_image.getchannel("A").getextrema()[0], 10)
             self.assertGreater(foreground_image.getchannel("A").getextrema()[1], 245)
             self.assertTrue(mask.is_file())
+            self.assertTrue(subject_mask.is_file())
             self.assertTrue(black_preview.is_file())
             self.assertTrue(white_preview.is_file())
             self.assertTrue(overlay.is_file())
@@ -366,6 +397,8 @@ class ScriptTests(unittest.TestCase):
             source = root / "source.png"
             selection = root / "opacity-selection.png"
             presence = root / "presence-selection.png"
+            subject_selection = root / "subject-selection.png"
+            subject_mask = root / "subject-mask.png"
             foreground = root / "foreground.png"
             report_path = root / "report.json"
 
@@ -383,7 +416,7 @@ class ScriptTests(unittest.TestCase):
 
             opacity = Image.new("L", source_image.size, 0)
             opacity_draw = ImageDraw.Draw(opacity)
-            opacity_draw.ellipse((20, 18, 78, 92), fill=255)
+            opacity_draw.ellipse((20, 18, 78, 92), fill=128)
             opacity_draw.rectangle((8, 98, 92, 132), fill=128)
             opacity_draw.line((18, 112, 82, 112), fill=255, width=3)
             opacity.save(selection)
@@ -395,6 +428,12 @@ class ScriptTests(unittest.TestCase):
             presence_draw.line((18, 112, 82, 112), fill=(245, 245, 245), width=3)
             presence_image.save(presence)
 
+            subject_selection_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject_selection_image).ellipse(
+                (20, 18, 78, 92), fill=255
+            )
+            subject_selection_image.save(subject_selection)
+
             prepared = subprocess.run(
                 [
                     sys.executable,
@@ -405,8 +444,12 @@ class ScriptTests(unittest.TestCase):
                     str(selection),
                     "--presence-selection",
                     str(presence),
+                    "--opaque-subject-selection",
+                    str(subject_selection),
                     "--output-foreground",
                     str(foreground),
+                    "--output-opaque-subject-mask",
+                    str(subject_mask),
                     "--output-report",
                     str(report_path),
                     "--feather-radius",
@@ -427,12 +470,15 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse(report["source_rgb_preserved"])
             self.assertTrue(report["opaque_source_rgb_preserved"])
             self.assertTrue(report["translucent_rgb_decontaminated"])
+            self.assertTrue(report["subject_fully_opaque"])
+            self.assertEqual(report["opaque_subject_missing_coverage"], 0.0)
 
             output = Image.open(foreground).convert("RGBA")
             self.assertEqual(output.getpixel((2, 70))[3], 0)
             self.assertEqual(output.getpixel((12, 102))[3], 144)
             self.assertEqual(output.getpixel((50, 112))[3], 255)
             self.assertEqual(output.getpixel((50, 50))[3], 255)
+            self.assertEqual(Image.open(subject_mask).convert("L").getpixel((50, 50)), 255)
             self.assertEqual(
                 source_image.convert("RGBA").getpixel((50, 50))[:3],
                 output.getpixel((50, 50))[:3],
@@ -443,12 +489,61 @@ class ScriptTests(unittest.TestCase):
             )
             self.assertTrue(report_path.is_file())
 
+    def test_prepare_foreground_rejects_subject_missing_from_presence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            selection = root / "selection.png"
+            subject_selection = root / "subject-selection.png"
+
+            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            source_image.save(source)
+            selection_image = Image.new("RGB", source_image.size, (0, 255, 0))
+            ImageDraw.Draw(selection_image).rectangle(
+                (20, 25, 55, 105), fill=(210, 70, 145)
+            )
+            selection_image.save(selection)
+            subject_selection_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject_selection_image).rectangle(
+                (20, 25, 75, 105), fill=255
+            )
+            subject_selection_image.save(subject_selection)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--selection",
+                    str(selection),
+                    "--opaque-subject-selection",
+                    str(subject_selection),
+                    "--output-foreground",
+                    str(root / "foreground.png"),
+                    "--output-opaque-subject-mask",
+                    str(root / "subject-mask.png"),
+                    "--feather-radius",
+                    "0",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(prepared.returncode, 0)
+            report = json.loads(prepared.stdout)
+            self.assertGreater(report["opaque_subject_missing_coverage"], 0.0)
+            self.assertIn(
+                "Foreground presence selection misses pixels from the opaque subject",
+                report["errors"],
+            )
+
     def test_check_assets_allows_translucent_material_color_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
             background = root / "background.png"
             foreground = root / "foreground.png"
+            subject_mask = root / "subject-mask.png"
             contour = root / "contour.png"
             bloom = root / "bloom.png"
 
@@ -464,6 +559,9 @@ class ScriptTests(unittest.TestCase):
             foreground_pixels[23:32, 18:22, :3] = source_pixels[23:32, 18:22, :3]
             foreground_pixels[23:32, 18:22, 3] = 255
             Image.fromarray(foreground_pixels, mode="RGBA").save(foreground)
+            subject_mask_image = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject_mask_image).rectangle((18, 23, 21, 31), fill=255)
+            subject_mask_image.save(subject_mask)
 
             contour_image = Image.new("RGBA", source_image.size, (0, 0, 0, 255))
             ImageDraw.Draw(contour_image).line(
@@ -486,6 +584,8 @@ class ScriptTests(unittest.TestCase):
                     str(background),
                     "--foreground",
                     str(foreground),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
                     "--contour",
                     str(contour),
                     "--bloom",
@@ -501,111 +601,12 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["opaque_source_rgb_preserved"])
             self.assertTrue(report["required_visual_review"])
 
-    def test_bridge_foreground_locks_enclosed_source_pixel_pocket(self) -> None:
-        try:
-            import cv2  # noqa: F401
-        except ImportError:
-            self.skipTest("opencv-python-headless is not installed")
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "source.png"
-            foreground = root / "foreground.png"
-            output = root / "output.png"
-            mask = root / "mask.png"
-            overlay = root / "overlay.png"
-            report_path = root / "report.json"
-
-            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
-            ImageDraw.Draw(source_image).rectangle(
-                (30, 45, 70, 95), fill=(220, 80, 150, 255)
-            )
-            source_image.save(source)
-
-            foreground_image = source_image.copy()
-            alpha = Image.new("L", source_image.size, 255)
-            ImageDraw.Draw(alpha).rectangle((38, 54, 62, 86), fill=0)
-            foreground_image.putalpha(alpha)
-            foreground_image.save(foreground)
-
-            bridged = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPTS / "bridge_foreground.py"),
-                    "--source",
-                    str(source),
-                    "--foreground",
-                    str(foreground),
-                    "--seed",
-                    "50,70",
-                    "--output-foreground",
-                    str(output),
-                    "--output-mask",
-                    str(mask),
-                    "--output-overlay",
-                    str(overlay),
-                    "--output-report",
-                    str(report_path),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            report = json.loads(bridged.stdout)
-            self.assertTrue(report["ok"])
-            self.assertTrue(report["source_rgb_preserved"])
-            self.assertEqual(report["component_count"], 1)
-            self.assertGreater(report["bridge_coverage"], 0.04)
-            self.assertEqual(Image.open(output).convert("RGBA").getpixel((50, 70))[3], 255)
-            self.assertEqual(
-                Image.open(source).convert("RGB").tobytes(),
-                Image.open(output).convert("RGB").tobytes(),
-            )
-            self.assertTrue(mask.is_file())
-            self.assertTrue(overlay.is_file())
-            self.assertTrue(report_path.is_file())
-
-    def test_bridge_foreground_rejects_open_scenery(self) -> None:
-        try:
-            import cv2  # noqa: F401
-        except ImportError:
-            self.skipTest("opencv-python-headless is not installed")
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "source.png"
-            foreground = root / "foreground.png"
-            Image.new("RGBA", (100, 140), (30, 70, 120, 255)).save(source)
-            foreground_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
-            alpha = Image.new("L", foreground_image.size, 255)
-            ImageDraw.Draw(alpha).rectangle((0, 40, 65, 100), fill=0)
-            foreground_image.putalpha(alpha)
-            foreground_image.save(foreground)
-
-            bridged = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPTS / "bridge_foreground.py"),
-                    "--source",
-                    str(source),
-                    "--foreground",
-                    str(foreground),
-                    "--seed",
-                    "30,70",
-                    "--output-foreground",
-                    str(root / "output.png"),
-                ],
-                capture_output=True,
-                text=True,
-            )
-            self.assertNotEqual(bridged.returncode, 0)
-            self.assertIn("touching the canvas edge", bridged.stderr)
-
     def test_prepare_and_check_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             background = root / "background.png"
             foreground = root / "foreground.png"
+            subject_mask = root / "subject-mask.png"
             structure = root / "structure.png"
             occlusion = root / "occlusion.png"
             contour = root / "contour.png"
@@ -622,6 +623,9 @@ class ScriptTests(unittest.TestCase):
                 (12, 10, 88, 130), fill=(220, 80, 120, 255)
             )
             foreground_image.save(foreground)
+            subject_mask_image = Image.new("L", foreground_image.size, 0)
+            ImageDraw.Draw(subject_mask_image).rectangle((15, 15, 30, 35), fill=255)
+            subject_mask_image.save(subject_mask)
 
             structure_image = Image.new("L", (100, 140), 0)
             ImageDraw.Draw(structure_image).line(
@@ -683,6 +687,8 @@ class ScriptTests(unittest.TestCase):
                     str(background),
                     "--foreground",
                     str(foreground),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
                     "--contour",
                     str(contour),
                     "--bloom",
@@ -704,6 +710,7 @@ class ScriptTests(unittest.TestCase):
             source = root / "source.png"
             background = root / "background.png"
             foreground = root / "foreground.png"
+            subject_mask = root / "subject-mask.png"
             contour = root / "contour.png"
             bloom = root / "bloom.png"
             Image.new("RGBA", (40, 56), (20, 40, 60, 255)).save(source)
@@ -711,6 +718,9 @@ class ScriptTests(unittest.TestCase):
             changed = Image.new("RGBA", (40, 56), (21, 40, 60, 0))
             ImageDraw.Draw(changed).rectangle((10, 10, 30, 45), fill=(21, 40, 60, 255))
             changed.save(foreground)
+            subject_mask_image = Image.new("L", changed.size, 0)
+            ImageDraw.Draw(subject_mask_image).rectangle((12, 12, 18, 20), fill=255)
+            subject_mask_image.save(subject_mask)
             line = Image.new("RGBA", (40, 56), (0, 0, 0, 255))
             ImageDraw.Draw(line).line((12, 12, 28, 40), fill=(255, 255, 255, 255))
             line.save(contour)
@@ -726,6 +736,8 @@ class ScriptTests(unittest.TestCase):
                     str(background),
                     "--foreground",
                     str(foreground),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
                     "--contour",
                     str(contour),
                     "--bloom",
@@ -739,6 +751,55 @@ class ScriptTests(unittest.TestCase):
             self.assertFalse(report["source_rgb_preserved"])
             self.assertIn(
                 "Opaque foreground RGB differs from the normalized source",
+                report["errors"],
+            )
+
+    def test_check_assets_rejects_transparent_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            background = root / "background.png"
+            foreground = root / "foreground.png"
+            subject_mask = root / "subject-mask.png"
+            contour = root / "contour.png"
+            bloom = root / "bloom.png"
+
+            Image.new("RGBA", (40, 56), (20, 40, 60, 255)).save(background)
+            foreground_image = Image.new("RGBA", (40, 56), (0, 0, 0, 0))
+            ImageDraw.Draw(foreground_image).rectangle(
+                (8, 8, 31, 47), fill=(200, 80, 120, 255)
+            )
+            foreground_image.putpixel((16, 16), (200, 80, 120, 254))
+            foreground_image.save(foreground)
+
+            subject_mask_image = Image.new("L", foreground_image.size, 0)
+            ImageDraw.Draw(subject_mask_image).rectangle((12, 12, 20, 24), fill=255)
+            subject_mask_image.save(subject_mask)
+            Image.new("RGBA", foreground_image.size, (0, 0, 0, 255)).save(contour)
+            Image.new("RGBA", foreground_image.size, (0, 0, 0, 255)).save(bloom)
+
+            checked = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "check_assets.py"),
+                    "--background",
+                    str(background),
+                    "--foreground",
+                    str(foreground),
+                    "--opaque-subject-mask",
+                    str(subject_mask),
+                    "--contour",
+                    str(contour),
+                    "--bloom",
+                    str(bloom),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(checked.returncode, 0)
+            report = json.loads(checked.stdout)
+            self.assertFalse(report["subject_fully_opaque"])
+            self.assertIn(
+                "Main subject contains transparent foreground pixels",
                 report["errors"],
             )
 

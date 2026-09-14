@@ -140,7 +140,9 @@ def main() -> int:
     selection_group.add_argument("--selection", type=Path)
     selection_group.add_argument("--opacity-selection", type=Path)
     parser.add_argument("--presence-selection", type=Path)
+    parser.add_argument("--opaque-subject-selection", required=True, type=Path)
     parser.add_argument("--output-foreground", required=True, type=Path)
+    parser.add_argument("--output-opaque-subject-mask", required=True, type=Path)
     parser.add_argument("--output-mask", type=Path)
     parser.add_argument("--output-black-preview", type=Path)
     parser.add_argument("--output-white-preview", type=Path)
@@ -161,6 +163,15 @@ def main() -> int:
     selection_path = args.opacity_selection or args.selection
     selection = ImageOps.exif_transpose(Image.open(selection_path)).convert("RGB")
     selection = resize_full_canvas(selection, source.size, "Selection")
+    subject_selection_rgb = ImageOps.exif_transpose(
+        Image.open(args.opaque_subject_selection)
+    ).convert("RGB")
+    subject_selection_rgb = resize_full_canvas(
+        subject_selection_rgb, source.size, "Opaque subject selection"
+    )
+    subject_selection = subject_selection_rgb.convert("L").point(
+        lambda value: 255 if value >= 128 else 0
+    )
     if args.opacity_selection and not args.presence_selection:
         raise ValueError(
             "Opacity selection requires a chroma --presence-selection"
@@ -222,6 +233,13 @@ def main() -> int:
                 fillcolor=0,
             )
             translucent_pixels = np.asarray(translucent_mask) >= 128
+        subject_selection = subject_selection.transform(
+            source.size,
+            Image.Transform.AFFINE,
+            inverse,
+            resample=Image.Resampling.NEAREST,
+            fillcolor=0,
+        )
 
     if args.feather_radius > 0:
         scale = source.width / 1000.0
@@ -229,6 +247,25 @@ def main() -> int:
             ImageFilter.GaussianBlur(max(0.05, args.feather_radius * scale))
         )
     foreground_alpha = ImageChops.multiply(foreground_alpha, source.getchannel("A"))
+
+    # 人物选择板是最终不透明度的硬约束。它不能替主前景选择板补洞：若主选择
+    # 漏掉人物像素则直接报错，要求重新生成选择板，避免误把背景带入前景。
+    source_alpha_pixels = np.asarray(source.getchannel("A"), dtype=np.uint8)
+    subject_pixels = np.logical_and(
+        np.asarray(subject_selection, dtype=np.uint8) >= 128,
+        source_alpha_pixels > 0,
+    )
+    subject_coverage = float(subject_pixels.mean())
+    prelock_alpha_pixels = np.asarray(foreground_alpha, dtype=np.uint8)
+    missing_subject_pixels = np.logical_and(
+        subject_pixels, prelock_alpha_pixels < 128
+    )
+    missing_subject_coverage = float(missing_subject_pixels.mean())
+    foreground_alpha_pixels = prelock_alpha_pixels.copy()
+    foreground_alpha_pixels[subject_pixels] = 255
+    foreground_alpha = Image.fromarray(foreground_alpha_pixels, mode="L")
+    translucent_pixels = np.logical_and(translucent_pixels, ~subject_pixels)
+    translucent_coverage = float(translucent_pixels.mean())
 
     source_pixels = np.asarray(source, dtype=np.uint8)
     output_pixels = source_pixels.copy()
@@ -249,6 +286,12 @@ def main() -> int:
     foreground_coverage = float(strong_foreground.mean())
     matte_coverage = 1.0 - foreground_coverage
     errors: list[str] = []
+    if subject_coverage <= 0.001:
+        errors.append("Opaque subject selection is empty")
+    if missing_subject_pixels.any():
+        errors.append(
+            "Foreground presence selection misses pixels from the opaque subject"
+        )
     if matte_coverage < 0.03:
         errors.append("Selection contains too little chroma scenery matte")
     if matte_coverage > 0.92:
@@ -263,6 +306,10 @@ def main() -> int:
 
     args.output_foreground.parent.mkdir(parents=True, exist_ok=True)
     foreground.save(args.output_foreground)
+    args.output_opaque_subject_mask.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(
+        np.where(subject_pixels, 255, 0).astype(np.uint8), mode="L"
+    ).save(args.output_opaque_subject_mask)
     if args.output_mask:
         args.output_mask.parent.mkdir(parents=True, exist_ok=True)
         foreground_alpha.save(args.output_mask)
@@ -287,6 +334,13 @@ def main() -> int:
         "ok": not errors,
         "canvas": list(source.size),
         "foreground_coverage": round(foreground_coverage, 6),
+        "opaque_subject_coverage": round(subject_coverage, 6),
+        "opaque_subject_missing_coverage": round(missing_subject_coverage, 6),
+        "subject_fully_opaque": (
+            bool(np.all(foreground_alpha_pixels[subject_pixels] == 255))
+            if subject_pixels.any()
+            else False
+        ),
         "scenery_matte_coverage": round(matte_coverage, 6),
         "selection_mode": selection_mode,
         "presence_selection_used": args.presence_selection is not None,
@@ -307,7 +361,8 @@ def main() -> int:
         "affine_applied": args.forward_affine is not None,
         "errors": errors,
         "required_visual_review": [
-            "Inspect black and white previews for missing character, text, panels, symbols, credits, or frame pixels.",
+            "Inspect black and white previews: the complete visible subject must be solid and no scenery element may appear in foreground.",
+            "Confirm the opaque subject mask contains only the visible main subject, with no scenery, UI, or invented hidden parts.",
             "For a three-state plate, confirm scenery visible through translucent material is black, the material itself is gray, and opaque text or strokes are white.",
             "Inspect the red edge overlay for local silhouette drift and retained scenery islands.",
             "Reject local anatomy changes; use affine only for uniform full-canvas framing drift.",

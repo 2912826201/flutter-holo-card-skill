@@ -2,7 +2,7 @@
 
 ## Layer order and UVs
 
-Render `background -> merged foreground -> view-dependent material and sketch-line emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and line emission only where the full-foreground sketch and foreground alpha overlap. The foreground and sketch both contain the subject, effects, typography, panels, symbols, and frame at one signed depth.
+Render `background -> merged foreground -> view-dependent material and contour-line emission`. Apply foil to the composed base, sparse stars where foreground alpha is absent, and line emission only where the contour-only map and foreground alpha overlap. The foreground contains the fully opaque main subject, subject-linked elements, typography, panels, symbols, and frame at one signed depth; the contour map traces only their source-visible silhouettes and overlap/separation boundaries.
 
 Load the supplied source card as a fifth static sampler and use only its Alpha as the final card-shape mask. The repaired background is intentionally opaque for parallax sampling and must never define the outer silhouette. Multiply the final premultiplied color and Alpha by the static source mask so the background, shifted foreground, foil, glare, stars, contour, and bloom all share the exact antialiased card corners.
 

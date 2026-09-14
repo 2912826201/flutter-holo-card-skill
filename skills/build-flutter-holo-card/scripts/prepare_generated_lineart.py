@@ -94,7 +94,7 @@ def main() -> int:
         "strong_line_coverage": round(line_coverage, 6),
         "errors": errors,
         "required_visual_review": [
-            "Confirm every retained stroke comes from the generated sketch, not its checkerboard backdrop.",
+            "Confirm every retained stroke is a source-visible silhouette or overlap/separation contour, not an invented detail or checkerboard backdrop.",
             "Confirm the resized full canvas remains globally registered before affine calibration.",
         ],
     }
