@@ -4,7 +4,7 @@
 
 Support both contracts:
 
-- layered-3d: render background -> character -> interface/frame foreground. Apply contour and bloom to character before interface compositing so interface Alpha occludes both.
+- layered-3d: render background -> character -> complete interface/frame foreground. Apply contour and bloom to character before interface compositing so interface Alpha occludes both. This fixed order overrides any mixed overlap in the flat source: UI that was partly hidden by the character must already be restored in `foreground.png`.
 - merged-2d: render background -> merged foreground and apply contour/bloom to that foreground.
 
 Load source Alpha as the static card shape. It clips background in both modes and clips the complete merged-2d result. In layered-3d, a 160% transparent painter surface maps output coordinates through p=(uv-.5)*1.6+.5; only positive-depth character and interface pixels may extend beyond the static mask. Never let repaired-background Alpha define the card shape.
@@ -29,6 +29,8 @@ vec2 backgroundUv = (p - 0.5) * 0.5 + 0.5 - view * 0.25;
 ```
 
 In layered-3d, sample character, contour, and bloom at characterUv and foreground at interfaceUv. In merged-2d, sample foreground, contour, and bloom at characterUv. Never fit or offset contour separately.
+
+Do not solve character-over-UI crossings in the Shader. The resource workflow must provide a continuous UI Alpha/RGB plate through every concealed crossing. Live foreground Alpha then covers both the character and its contour/bloom, preventing gaps at all signed depths.
 
 Keep `depth = 0` as the neutral default from holo-card and preserve its full
 `-3...+3` range. Integrations may select a signed non-zero depth for their intended
@@ -92,6 +94,7 @@ This prevents a lower-half touch from immediately pitching the card before the u
 - Shader loads with six layered-3d runtime images and five merged-2d images.
 - Optional character input selects layered-3d; its absence selects merged-2d without a second component.
 - Layered-3d uses a 160% unclipped painter surface while merged-2d stays at card bounds.
+- Layered-3d resources explicitly declare whether character-over-UI crossings are absent or completed; a completed foreground stays continuous over the moving character.
 - Default, narrow, and wide layouts do not overflow.
 - Drag changes both transform and shader view.
 - Release is continuous before reaching center.

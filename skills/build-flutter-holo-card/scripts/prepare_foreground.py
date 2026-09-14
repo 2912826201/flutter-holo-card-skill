@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an original-pixel foreground from reviewed grayscale masks."""
+"""Build a source-faithful foreground with optional hidden-UI completion."""
 
 from __future__ import annotations
 
@@ -119,6 +119,8 @@ def main() -> int:
     selection_group.add_argument("--alpha-mask", type=Path)
     selection_group.add_argument("--opacity-selection", type=Path)
     parser.add_argument("--presence-mask", type=Path)
+    parser.add_argument("--completion-image", type=Path)
+    parser.add_argument("--completion-mask", type=Path)
     parser.add_argument(
         "--layer-role",
         choices=("merged", "interface"),
@@ -133,6 +135,7 @@ def main() -> int:
     parser.add_argument("--output-foreground", required=True, type=Path)
     parser.add_argument("--output-opaque-subject-mask", type=Path)
     parser.add_argument("--output-mask", type=Path)
+    parser.add_argument("--output-completion-mask", type=Path)
     parser.add_argument("--output-black-preview", type=Path)
     parser.add_argument("--output-white-preview", type=Path)
     parser.add_argument("--output-overlay", type=Path)
@@ -155,8 +158,39 @@ def main() -> int:
             "Merged foreground requires --opaque-subject-mask and "
             "--output-opaque-subject-mask"
         )
+    completion_requested = bool(args.completion_image or args.completion_mask)
+    if bool(args.completion_image) != bool(args.completion_mask):
+        raise ValueError(
+            "Hidden UI completion requires both --completion-image and "
+            "--completion-mask"
+        )
+    if completion_requested and args.layer_role != "interface":
+        raise ValueError("Hidden UI completion is valid only for interface layers")
+    if completion_requested and args.output_completion_mask is None:
+        raise ValueError(
+            "Hidden UI completion requires --output-completion-mask for validation"
+        )
 
     source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
+    completion_image = None
+    completion_alpha = None
+    if completion_requested:
+        completion_image = ImageOps.exif_transpose(
+            Image.open(args.completion_image)
+        ).convert("RGBA")
+        completion_image = resize_full_canvas(
+            completion_image, source.size, "Hidden UI completion image"
+        )
+        completion_mask_image = ImageOps.exif_transpose(
+            Image.open(args.completion_mask)
+        )
+        if completion_mask_image.mode not in ("1", "L"):
+            raise ValueError("Hidden UI completion mask must use grayscale L or 1 mode")
+        completion_alpha = resize_full_canvas(
+            completion_mask_image.convert("L"),
+            source.size,
+            "Hidden UI completion mask",
+        )
     opacity_selection = None
     if args.alpha_mask:
         alpha_mask = ImageOps.exif_transpose(Image.open(args.alpha_mask))
@@ -252,13 +286,37 @@ def main() -> int:
                 resample=Image.Resampling.NEAREST,
                 fillcolor=0,
             )
+        if completion_image is not None and completion_alpha is not None:
+            completion_image = completion_image.transform(
+                source.size,
+                Image.Transform.AFFINE,
+                inverse,
+                resample=Image.Resampling.BICUBIC,
+                fillcolor=(0, 0, 0, 0),
+            )
+            completion_alpha = completion_alpha.transform(
+                source.size,
+                Image.Transform.AFFINE,
+                inverse,
+                resample=Image.Resampling.BICUBIC,
+                fillcolor=0,
+            )
 
     if args.feather_radius > 0:
         scale = source.width / 1000.0
+        feather_radius = max(0.05, args.feather_radius * scale)
         foreground_alpha = foreground_alpha.filter(
-            ImageFilter.GaussianBlur(max(0.05, args.feather_radius * scale))
+            ImageFilter.GaussianBlur(feather_radius)
         )
+        if completion_alpha is not None:
+            completion_alpha = completion_alpha.filter(
+                ImageFilter.GaussianBlur(feather_radius)
+            )
     foreground_alpha = ImageChops.multiply(foreground_alpha, source.getchannel("A"))
+    if completion_alpha is not None:
+        completion_alpha = ImageChops.multiply(
+            completion_alpha, source.getchannel("A")
+        )
 
     # 人物选择板是最终不透明度的硬约束。它不能替主前景选择板补洞：若主选择
     # 漏掉人物像素则直接报错，要求重新生成选择板，避免误把背景带入前景。
@@ -293,6 +351,51 @@ def main() -> int:
         output_pixels[..., :3] = decontaminate_translucent_rgb(
             source_pixels[..., :3], translucent_pixels, material_radius
         )
+
+    # 前景可见区域始终由原图像素主导。补全图只从下方填入人物原先遮住的
+    # UI/边框缺口，因此不会重绘或覆盖任何原图中已经可见的文字和材质。
+    effective_completion_alpha = np.zeros(source_alpha_pixels.shape, dtype=np.uint8)
+    completion_requested_coverage = 0.0
+    completion_visible_overlap_coverage = 0.0
+    if completion_image is not None and completion_alpha is not None:
+        visible_alpha = foreground_alpha_pixels.astype(np.float32) / 255.0
+        requested_completion_alpha = (
+            np.asarray(completion_alpha, dtype=np.uint8).astype(np.float32) / 255.0
+        )
+        completion_requested_coverage = float(
+            (requested_completion_alpha >= 0.5).mean()
+        )
+        completion_visible_overlap_coverage = float(
+            np.logical_and(visible_alpha >= 0.5, requested_completion_alpha >= 0.5).mean()
+        )
+        hidden_completion_alpha = requested_completion_alpha * (1.0 - visible_alpha)
+        final_alpha = visible_alpha + hidden_completion_alpha
+
+        visible_rgb = output_pixels[..., :3].astype(np.float32) / 255.0
+        completion_rgb = (
+            np.asarray(completion_image, dtype=np.uint8)[..., :3].astype(np.float32)
+            / 255.0
+        )
+        premultiplied = (
+            visible_rgb * visible_alpha[..., None]
+            + completion_rgb * hidden_completion_alpha[..., None]
+        )
+        safe_alpha = np.maximum(final_alpha[..., None], 1e-6)
+        combined_rgb = np.where(
+            final_alpha[..., None] > 0,
+            premultiplied / safe_alpha,
+            visible_rgb,
+        )
+        output_pixels[..., :3] = np.rint(
+            np.clip(combined_rgb, 0.0, 1.0) * 255.0
+        ).astype(np.uint8)
+        foreground_alpha_pixels = np.rint(final_alpha * 255.0).astype(np.uint8)
+        foreground_alpha = Image.fromarray(foreground_alpha_pixels, mode="L")
+        effective_completion_alpha = np.rint(
+            hidden_completion_alpha * 255.0
+        ).astype(np.uint8)
+
+    completion_coverage = float((effective_completion_alpha >= 128).mean())
     foreground = Image.fromarray(output_pixels, mode="RGBA")
     foreground.putalpha(foreground_alpha)
 
@@ -309,6 +412,8 @@ def main() -> int:
         )
     if foreground_alpha.getextrema() == (255, 255):
         errors.append("Foreground contains no transparent scenery")
+    if completion_requested and completion_coverage <= 0.0001:
+        errors.append("Hidden UI completion contains no effective concealed pixels")
     if args.opacity_selection:
         if neutral_coverage is not None and neutral_coverage < 0.9:
             errors.append("Opacity selection must use neutral black, gray, and white")
@@ -327,6 +432,11 @@ def main() -> int:
     if args.output_mask:
         args.output_mask.parent.mkdir(parents=True, exist_ok=True)
         foreground_alpha.save(args.output_mask)
+    if args.output_completion_mask:
+        args.output_completion_mask.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(effective_completion_alpha, mode="L").save(
+            args.output_completion_mask
+        )
     if args.output_black_preview:
         args.output_black_preview.parent.mkdir(parents=True, exist_ok=True)
         composite_preview(foreground, 20).save(args.output_black_preview)
@@ -341,8 +451,14 @@ def main() -> int:
     output_rgb = np.asarray(foreground, dtype=np.uint8)[..., :3]
     full_rgb_preserved = bool(np.array_equal(source_rgb, output_rgb))
     opaque_pixels = np.asarray(foreground_alpha, dtype=np.uint8) >= 250
+    source_owned_opaque_pixels = np.logical_and(
+        opaque_pixels, effective_completion_alpha <= 4
+    )
     opaque_rgb_preserved = bool(
-        np.array_equal(source_rgb[opaque_pixels], output_rgb[opaque_pixels])
+        np.array_equal(
+            source_rgb[source_owned_opaque_pixels],
+            output_rgb[source_owned_opaque_pixels],
+        )
     )
     report = {
         "ok": not errors,
@@ -359,6 +475,14 @@ def main() -> int:
         "layer_role": args.layer_role,
         "selection_mode": selection_mode,
         "presence_mask_used": args.presence_mask is not None,
+        "hidden_ui_completion_used": completion_requested,
+        "hidden_ui_completion_requested_coverage": round(
+            completion_requested_coverage, 6
+        ),
+        "hidden_ui_completion_coverage": round(completion_coverage, 6),
+        "hidden_ui_completion_visible_overlap_coverage": round(
+            completion_visible_overlap_coverage, 6
+        ),
         "translucent_material_coverage": round(translucent_coverage, 6),
         "opaque_selection_coverage": round(opaque_coverage, 6),
         "neutral_selection_coverage": (
@@ -380,12 +504,17 @@ def main() -> int:
             (
                 "Inspect black and white previews: the complete visible subject must be solid and no scenery element may appear in foreground."
                 if args.layer_role == "merged"
-                else "Inspect black and white previews: keep only source-visible interface, text, panels, subject-linked effects, and frame; exclude the main subject and scenery."
+                else "Inspect black and white previews: keep the complete interface, text, panels, subject-linked effects, and frame, including declared character-occluded UI completion; exclude the main subject and scenery."
             ),
             (
                 "Confirm the opaque subject mask contains only the visible main subject, with no scenery, UI, or invented hidden parts."
                 if args.layer_role == "merged"
-                else "Confirm the interface plate preserves source RGB and never duplicates character pixels."
+                else "Confirm the interface plate preserves every source-visible UI pixel and never duplicates character pixels."
+            ),
+            (
+                "Confirm hidden UI completion restores every character-occluded frame or panel segment as one continuous upper layer, uses generated RGB only inside the reported completion mask, and contains no character or scenery."
+                if completion_requested
+                else "Confirm the source has no place where the character interrupts a continuous UI, panel, or frame; otherwise hidden UI completion is required."
             ),
             "For a three-state plate, confirm scenery visible through translucent material is black, the material itself is gray, and opaque text or strokes are white.",
             "Inspect the red edge overlay for local silhouette drift and retained scenery islands.",

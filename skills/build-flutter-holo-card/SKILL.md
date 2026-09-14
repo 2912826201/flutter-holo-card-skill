@@ -9,7 +9,7 @@ Use the `$holo-card` composition as the primary standard:
 
 1. repaired opaque scenery;
 2. one continuous colored character and its structure glow;
-3. combined typography, panels, symbols, credits, and decorative frame above the character.
+3. complete typography, panels, symbols, credits, and decorative frame above the character, including UI segments originally hidden by it.
 
 Keep the stacking order `background -> character -> UI` at every signed depth. A quality defect is a request to repair the current layer, never permission to change effect mode.
 
@@ -58,7 +58,7 @@ Preserve one full canvas and aspect ratio for every file. Never independently cr
 - `source.png`: normalized supplied card and static card-shape Alpha;
 - `background.png`: complete scenery with concealed areas repaired;
 - `character.png`: continuous colored character, transparent outside it;
-- `foreground.png`: combined UI/frame and any intentionally upper subject-linked effect;
+- `foreground.png`: complete UI/frame and any intentionally upper subject-linked effect, with character-occluded UI continuity restored;
 - `character_contour.png`: opaque grayscale structure core;
 - `character_bloom.png`: opaque two-scale packed bloom.
 
@@ -93,7 +93,7 @@ python scripts/prepare_generated_character.py \
 
 Omit `--alpha-mask` only when the returned file has genuine useful Alpha. The visible-subject mask is an independently reviewed source-space mask; it guarantees that every source-visible subject pixel is Alpha 255 but must not hide missing generated artwork.
 
-4. Prepare source-pixel UI/foreground with a reviewed exact mask. Use the three-state material branch only when the source visibly contains translucent UI through which scenery is visible. Machine checks verify file invariants; the user or reviewer decides semantic membership and visual quality.
+4. Inspect every character/UI crossing before preparing `foreground.png`. In `layered-3d`, always normalize the final order to `character -> complete UI`, even where the source character was painted over the UI. Preserve source pixels for visible UI and generate only the concealed continuation needed to complete an interrupted frame, panel, information bar, or UI stroke. Pass that generated completion and its exact hidden-region mask through `prepare_foreground.py`; never leave a transparent notch around the character. Use the three-state material branch only when the source visibly contains translucent UI through which scenery is visible. Machine checks verify file invariants; the user or reviewer decides semantic membership and visual quality.
 5. Generate structure from `character.png` in `layered-3d` or `foreground.png` in `merged-2d`. Contour is provenance-based, not position-based: retain source-visible silhouettes, overlaps, and defining internal lines, but add no absent line, shading, hatching, or texture synthesis.
 6. Normalize, globally calibrate when needed, and build the contour/bloom maps. A calibration or density warning requests review or regeneration; it never changes the selected effect.
 7. Run `scripts/check_assets.py`. Treat its `errors` as deterministic invariants to fix in the current mode. Treat `warnings` and `required_visual_review` as review items, not automatic rejection or fallback triggers.
@@ -111,7 +111,7 @@ Preserve these behaviors:
 - use one amplified view vector for all parallax and material motion while keeping physical card tilt small;
 - use the holo-card UV coefficients for background, character, and UI;
 - in `layered-3d`, paint on an unclipped 160% transparent surface so positive depth can extend character/UI outside the clipped background;
-- UI always covers character, contour emission, and bloom;
+- the complete UI always covers character, contour emission, and bloom, regardless of the mixed overlap order in the supplied flat image;
 - keep the foil sweep oriented lower-left to upper-right;
 - keep static state free of foil/glare, record touch-down as the zero-delta origin, and animate release continuously;
 - use neutral black contour/bloom maps to disable refused line generation without a Shader branch.
@@ -120,7 +120,7 @@ Do not add normal, height, or roughness maps unless the user asks for a differen
 
 ## Validate and hand off
 
-For resources, inspect each actual layer at full canvas and compare the flat composite before enabling glow. In `layered-3d`, also test signed depth `-3`, `0`, and `+3`; reject duplicated subjects, holes, moving text, dirty matte, and contour drift by repairing the responsible primary layer.
+For resources, inspect each actual layer at full canvas and compare the flat composite before enabling glow. In `layered-3d`, also test signed depth `-3`, `0`, and `+3`; reject duplicated subjects, holes, moving text, dirty matte, contour drift, or any exposed break where a moving character crosses a frame/panel/UI stroke. A source crossing may intentionally change only where the completed UI is moved above a character that originally covered it.
 
 For full implementation:
 

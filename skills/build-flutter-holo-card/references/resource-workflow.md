@@ -18,10 +18,10 @@ Follow the same four visual roles as `$holo-card`:
 |---|---|---|
 | Character | `character.png` | One continuous colored main illustrated subject. Keep attached hair, fur, tails, clothing, handheld objects, and accessories. |
 | Background | `background.png` | Complete opaque scenery, including areas concealed by character and UI. No subject, typography, panel, or frame residue. |
-| UI | `foreground.png` | Combined original typography, numbers, symbols, information panels, credits, editorial insets, and entire decorative frame. |
+| UI | `foreground.png` | Complete typography, numbers, symbols, information panels, credits, editorial insets, and decorative frame above the character. Restore any continuous UI segment hidden by the source character. |
 | Structure | `character_contour.png` plus `character_bloom.png` | Thin source-visible character contours and their two-scale bloom. No UI or scenery lines. |
 
-Subject-linked rings, auras, magic trails, and similar effects belong to the layer whose motion and occlusion they visually share. Never duplicate one effect in character and UI. Keep stacking fixed as `background -> character -> UI`.
+Subject-linked rings, auras, magic trails, and similar effects belong to the layer whose motion and occlusion they visually share. Never duplicate one effect in character and UI. Keep stacking fixed as `background -> character -> UI`; do not reproduce a mixed source z-order in which part of the character sits above UI.
 
 Keep every layer on the source canvas. Generated layers may have another resolution only when their aspect ratio and full-canvas framing match; resize the entire canvas once and never fit a content bounding box.
 
@@ -57,11 +57,19 @@ Reject repeated subjects, empty silhouettes, text ghosts, frame fragments, holes
 
 ### UI
 
-Keep final UI RGB from `source.png` for legibility and exact alignment. When the retained UI is opaque, ask the image model for a registered Alpha-selection aid, not repainted final UI:
+First inspect every crossing between the character and a continuous frame, panel, information bar, or UI stroke. In `layered-3d`, the final character must stay beneath the complete UI everywhere. If the source character covers part of that UI, restore the concealed UI continuation before extracting the final layer. This intentionally normalizes the local source overlap; never cut the foreground around the visible character silhouette.
+
+Keep final source-visible UI RGB from `source.png` for legibility and exact alignment. When the retained UI is opaque, ask the image model for a registered Alpha-selection aid, not repainted final UI:
 
 > Produce a full-canvas grayscale Alpha mask registered exactly to the supplied card. White retains the source-visible typography, numerals, symbols, information bars and their actual backing panels, credits, editorial inset panels, and the entire decorative border/card frame. Black removes the main illustrated subject and independently moving scenery. Preserve antialiased boundaries as intermediate gray only where the source edge is genuinely partial. Keep frame and typography at one depth. Do not move, redraw, simplify, invent, or remove a panel, and do not include unrelated scenery islands.
 
 When text has a source-visible backing, retain that actual backing. When it has none, do not invent one. When a translucent panel reveals scenery, retain only the panel material in UI; the scenery seen through it remains in background.
+
+When a character interrupts continuous UI, generate one full-canvas colored completion reference:
+
+> Reconstruct the complete colored card-interface layer on the exact supplied canvas. Continue only the frame, panel, information bar, border, or UI stroke visibly interrupted by the illustrated character, following its adjacent width, curvature, perspective, color, material, translucency, outline, and texture. Keep every source-visible UI element registered and unchanged as a reference, but do not include the character, scenery, or any new decoration. Do not complete unrelated hidden content, rewrite text, move the layout, crop, recenter, or alter the canvas. The final workflow will consume generated RGB only inside the character-occluded UI gaps.
+
+Create a registered grayscale completion mask for that returned image. Use nonzero values only for the concealed UI pixels that must be restored; use `255` for opaque UI, the intended partial Alpha for translucent material, antialiased gray on real edges, and `0` for all source-visible UI, character, and scenery. The mask must connect the two source-visible sides of each interrupted UI segment, stay inside the source-visible character occlusion except for antialiased edge tolerance, and never expand into unrelated foreground or surrounding scenery.
 
 ## Alpha preparation
 
@@ -91,6 +99,16 @@ python scripts/prepare_foreground.py \
   --output-overlay foreground-alignment-overlay.png \
   --output-report foreground-report.json
 ```
+
+When UI completion is required, add:
+
+```bash
+  --completion-image foreground-completion-generated.png \
+  --completion-mask foreground-completion-selection.png \
+  --output-completion-mask foreground-completion-mask.png
+```
+
+`prepare_foreground.py` composites the generated completion underneath the source-visible UI. Opaque source-visible UI pixels always win, so generated pixels cannot rewrite existing text, borders, or panel material. The emitted completion mask contains only the effective hidden fill and is required by final validation.
 
 Merged foreground uses the same command with `--layer-role merged`,
 `--opaque-subject-mask foreground-visible-subject-mask.png`, and
@@ -172,7 +190,15 @@ If line quality is wrong, regenerate the line art or correct one safe global aff
 - useful transparent regions in movable layers;
 - full opacity of source-visible subject pixels;
 - source RGB preservation for opaque source-pixel foreground;
+- source RGB preservation outside declared UI-completion pixels, full foreground Alpha coverage across every declared completion pixel, and completion-mask containment inside the source-visible subject occlusion;
 - grayscale opaque contour, packed opaque bloom, and contour-owner clipping.
+
+For every `layered-3d` run, explicitly classify the source crossings:
+
+- no character-over-UI crossing: pass `--ui-crossing-mode none`;
+- one or more character-over-UI crossings: pass `--ui-crossing-mode completed --foreground-completion-mask foreground-completion-mask.png`.
+
+The checker rejects a layered run that omits this classification. The classification itself still requires visual inspection: when `none` is selected, confirm no continuous UI is interrupted by the character; when `completed` is selected, confirm the restored UI is smooth, covers the character at every signed depth, and changes no source-visible UI pixel.
 
 Coverage and line-density values are diagnostics. They cannot determine whether a large character, sparse UI, translucent frame, or detailed contour is semantically correct and therefore must not select fallback or fail an otherwise valid file by themselves.
 

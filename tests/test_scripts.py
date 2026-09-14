@@ -33,6 +33,13 @@ class ScriptTests(unittest.TestCase):
         foreground_preparer = (SCRIPTS / "prepare_foreground.py").read_text(
             encoding="utf-8"
         )
+        workflow = (
+            ROOT
+            / "skills"
+            / "build-flutter-holo-card"
+            / "references"
+            / "resource-workflow.md"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("effect=auto (default)", skill)
         self.assertIn("Start and remain on `layered-3d`", skill)
@@ -42,6 +49,10 @@ class ScriptTests(unittest.TestCase):
         )
         self.assertIn("report that primary stage as blocked", skill)
         self.assertIn("Never change effect mode", skill)
+        self.assertIn("never leave a transparent notch around the character", skill)
+        self.assertIn("character -> complete UI", skill)
+        self.assertIn("--ui-crossing-mode", workflow)
+        self.assertIn("--completion-image", workflow)
         self.assertNotIn("does not pass visual review, continue with merged-2d", skill)
         self.assertIn("requested_effect", skill)
         self.assertIn("effect=layered-3d", readme)
@@ -99,6 +110,13 @@ class ScriptTests(unittest.TestCase):
                 (root / name).write_bytes(b"final")
             (root / "background-generated.png").write_bytes(b"temporary")
             (root / "foreground-alpha.png").write_bytes(b"temporary")
+            (root / "foreground-completion-generated.png").write_bytes(
+                b"temporary"
+            )
+            (root / "foreground-completion-selection.png").write_bytes(
+                b"temporary"
+            )
+            (root / "foreground-completion-mask.png").write_bytes(b"temporary")
             (root / "foreground-visible-subject-mask.png").write_bytes(
                 b"temporary"
             )
@@ -133,6 +151,13 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["ok"])
             self.assertFalse((root / "background-generated.png").exists())
             self.assertFalse((root / "foreground-alpha.png").exists())
+            self.assertFalse(
+                (root / "foreground-completion-generated.png").exists()
+            )
+            self.assertFalse(
+                (root / "foreground-completion-selection.png").exists()
+            )
+            self.assertFalse((root / "foreground-completion-mask.png").exists())
             self.assertFalse(
                 (root / "foreground-visible-subject-mask.png").exists()
             )
@@ -588,6 +613,8 @@ class ScriptTests(unittest.TestCase):
                     str(foreground),
                     "--character",
                     str(character),
+                    "--ui-crossing-mode",
+                    "none",
                     "--opaque-subject-mask",
                     str(subject_mask),
                     "--contour",
@@ -714,6 +741,230 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(black_preview.is_file())
             self.assertTrue(white_preview.is_file())
             self.assertTrue(overlay.is_file())
+
+    def test_prepare_foreground_restores_character_occluded_ui_below_source_pixels(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            visible_mask = root / "foreground-alpha-mask.png"
+            completion_image = root / "foreground-completion-generated.png"
+            completion_selection = root / "foreground-completion-selection.png"
+            foreground = root / "foreground.png"
+            completion_mask = root / "foreground-completion-mask.png"
+
+            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            source_draw = ImageDraw.Draw(source_image)
+            source_draw.rectangle((5, 64, 39, 75), fill=(245, 245, 245, 255))
+            source_draw.rectangle((61, 64, 94, 75), fill=(245, 245, 245, 255))
+            source_draw.rectangle((40, 38, 60, 105), fill=(205, 70, 125, 255))
+            source_image.save(source)
+
+            visible = Image.new("L", source_image.size, 0)
+            visible_draw = ImageDraw.Draw(visible)
+            visible_draw.rectangle((5, 64, 39, 75), fill=255)
+            visible_draw.rectangle((61, 64, 94, 75), fill=255)
+            visible.save(visible_mask)
+
+            generated = Image.new("RGBA", source_image.size, (0, 0, 0, 255))
+            ImageDraw.Draw(generated).rectangle(
+                (40, 64, 60, 75), fill=(238, 232, 210, 255)
+            )
+            generated.save(completion_image)
+            completion = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(completion).rectangle((40, 64, 60, 75), fill=255)
+            completion.save(completion_selection)
+
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--alpha-mask",
+                    str(visible_mask),
+                    "--layer-role",
+                    "interface",
+                    "--completion-image",
+                    str(completion_image),
+                    "--completion-mask",
+                    str(completion_selection),
+                    "--output-completion-mask",
+                    str(completion_mask),
+                    "--output-foreground",
+                    str(foreground),
+                    "--feather-radius",
+                    "0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(prepared.stdout)
+            output = Image.open(foreground).convert("RGBA")
+            final_completion = Image.open(completion_mask).convert("L")
+
+            self.assertTrue(report["ok"])
+            self.assertTrue(report["hidden_ui_completion_used"])
+            self.assertGreater(report["hidden_ui_completion_coverage"], 0)
+            self.assertFalse(report["source_rgb_preserved"])
+            self.assertTrue(report["opaque_source_rgb_preserved"])
+            self.assertEqual(output.getpixel((20, 70)), (245, 245, 245, 255))
+            self.assertEqual(output.getpixel((50, 70)), (238, 232, 210, 255))
+            self.assertEqual(output.getpixel((20, 30))[3], 0)
+            self.assertEqual(final_completion.getpixel((50, 70)), 255)
+            self.assertEqual(final_completion.getpixel((20, 70)), 0)
+
+    def test_check_assets_requires_and_validates_layered_ui_crossing_mode(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            background = root / "background.png"
+            visible_mask = root / "foreground-alpha-mask.png"
+            completion_image = root / "foreground-completion-generated.png"
+            completion_selection = root / "foreground-completion-selection.png"
+            completion_mask = root / "foreground-completion-mask.png"
+            foreground = root / "foreground.png"
+            character = root / "character.png"
+            subject_mask = root / "subject-mask.png"
+            contour = root / "contour.png"
+            bloom = root / "bloom.png"
+
+            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            source_draw = ImageDraw.Draw(source_image)
+            source_draw.rectangle((5, 64, 39, 75), fill=(245, 245, 245, 255))
+            source_draw.rectangle((61, 64, 94, 75), fill=(245, 245, 245, 255))
+            source_draw.rectangle((40, 38, 60, 105), fill=(205, 70, 125, 255))
+            source_image.save(source)
+            Image.new("RGBA", source_image.size, (30, 70, 120, 255)).save(
+                background
+            )
+
+            visible = Image.new("L", source_image.size, 0)
+            visible_draw = ImageDraw.Draw(visible)
+            visible_draw.rectangle((5, 64, 39, 75), fill=255)
+            visible_draw.rectangle((61, 64, 94, 75), fill=255)
+            visible.save(visible_mask)
+            generated = Image.new("RGBA", source_image.size, (0, 0, 0, 255))
+            ImageDraw.Draw(generated).rectangle(
+                (40, 64, 60, 75), fill=(238, 232, 210, 255)
+            )
+            generated.save(completion_image)
+            completion = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(completion).rectangle((40, 64, 60, 75), fill=255)
+            completion.save(completion_selection)
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_foreground.py"),
+                    "--source",
+                    str(source),
+                    "--alpha-mask",
+                    str(visible_mask),
+                    "--layer-role",
+                    "interface",
+                    "--completion-image",
+                    str(completion_image),
+                    "--completion-mask",
+                    str(completion_selection),
+                    "--output-completion-mask",
+                    str(completion_mask),
+                    "--output-foreground",
+                    str(foreground),
+                    "--feather-radius",
+                    "0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            character_image = Image.new("RGBA", source_image.size, (0, 0, 0, 0))
+            ImageDraw.Draw(character_image).rectangle(
+                (40, 38, 60, 105), fill=(205, 70, 125, 255)
+            )
+            character_image.save(character)
+            subject = Image.new("L", source_image.size, 0)
+            ImageDraw.Draw(subject).rectangle((40, 38, 60, 105), fill=255)
+            subject.save(subject_mask)
+            Image.new("RGBA", source_image.size, (0, 0, 0, 255)).save(contour)
+            Image.new("RGBA", source_image.size, (0, 0, 0, 255)).save(bloom)
+
+            base_command = [
+                sys.executable,
+                str(SCRIPTS / "check_assets.py"),
+                "--source",
+                str(source),
+                "--background",
+                str(background),
+                "--foreground",
+                str(foreground),
+                "--character",
+                str(character),
+                "--opaque-subject-mask",
+                str(subject_mask),
+                "--contour",
+                str(contour),
+                "--bloom",
+                str(bloom),
+            ]
+            missing_mode = subprocess.run(
+                base_command,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(missing_mode.returncode, 0)
+            self.assertIn(
+                "Layered mode requires explicit --ui-crossing-mode none or completed",
+                json.loads(missing_mode.stdout)["errors"],
+            )
+
+            checked = subprocess.run(
+                [
+                    *base_command,
+                    "--ui-crossing-mode",
+                    "completed",
+                    "--foreground-completion-mask",
+                    str(completion_mask),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(checked.stdout)
+            self.assertTrue(report["ok"])
+            self.assertEqual(report["ui_crossing_mode"], "completed")
+            self.assertGreater(report["foreground_completion_coverage"], 0)
+            self.assertTrue(report["foreground_completion_fully_covered"])
+            self.assertTrue(
+                report["foreground_completion_inside_subject_occlusion"]
+            )
+            self.assertTrue(report["opaque_source_rgb_preserved"])
+
+            invalid_completion = root / "foreground-completion-outside-subject.png"
+            invalid_mask = Image.open(completion_mask).convert("L")
+            ImageDraw.Draw(invalid_mask).rectangle((8, 66, 12, 72), fill=255)
+            invalid_mask.save(invalid_completion)
+            rejected = subprocess.run(
+                [
+                    *base_command,
+                    "--ui-crossing-mode",
+                    "completed",
+                    "--foreground-completion-mask",
+                    str(invalid_completion),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn(
+                "Foreground completion mask extends outside the source-visible subject occlusion",
+                json.loads(rejected.stdout)["errors"],
+            )
 
     def test_prepare_foreground_preserves_translucent_panel_depth(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1074,7 +1325,7 @@ class ScriptTests(unittest.TestCase):
             report = json.loads(checked.stdout)
             self.assertFalse(report["source_rgb_preserved"])
             self.assertIn(
-                "Opaque foreground RGB differs from the normalized source",
+                "Opaque source-owned foreground RGB differs from the normalized source",
                 report["errors"],
             )
 

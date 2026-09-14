@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops, ImageOps, ImageStat
+from PIL import Image, ImageChops, ImageFilter, ImageOps, ImageStat
 
 
 def alpha(image: Image.Image) -> Image.Image:
@@ -34,6 +34,11 @@ def main() -> int:
     parser.add_argument("--contour", required=True, type=Path)
     parser.add_argument("--bloom", required=True, type=Path)
     parser.add_argument("--occlusion-mask", type=Path)
+    parser.add_argument(
+        "--ui-crossing-mode",
+        choices=("none", "completed"),
+    )
+    parser.add_argument("--foreground-completion-mask", type=Path)
     args = parser.parse_args()
 
     background = ImageOps.exif_transpose(Image.open(args.background)).convert("RGBA")
@@ -63,6 +68,15 @@ def main() -> int:
     )
     if source is not None:
         images["source"] = source
+    foreground_completion_mask = (
+        ImageOps.exif_transpose(
+            Image.open(args.foreground_completion_mask)
+        ).convert("L")
+        if args.foreground_completion_mask
+        else None
+    )
+    if foreground_completion_mask is not None:
+        images["foreground_completion_mask"] = foreground_completion_mask
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -75,6 +89,20 @@ def main() -> int:
     subject_fully_opaque = False
     subject_layer = character if character is not None else foreground
     effect_mode = "layered-3d" if character is not None else "merged-2d"
+    if character is not None and args.ui_crossing_mode is None:
+        errors.append(
+            "Layered mode requires explicit --ui-crossing-mode none or completed"
+        )
+    if character is None and (
+        args.ui_crossing_mode is not None or foreground_completion_mask is not None
+    ):
+        errors.append("UI crossing completion is valid only in layered mode")
+    if args.ui_crossing_mode == "completed" and foreground_completion_mask is None:
+        errors.append(
+            "Completed UI crossing mode requires --foreground-completion-mask"
+        )
+    if args.ui_crossing_mode == "none" and foreground_completion_mask is not None:
+        errors.append("UI crossing mode none cannot include a completion mask")
     if opaque_subject_mask.size != subject_layer.size:
         errors.append("Opaque subject mask canvas differs from its subject layer")
     elif subject_coverage <= 0.001:
@@ -115,6 +143,54 @@ def main() -> int:
     elif foreground_coverage >= 0.999:
         errors.append("Foreground has no transparent scenery region")
 
+    foreground_completion_coverage = 0.0
+    completion_fully_covered = None
+    completion_inside_subject_occlusion = None
+    completion_pixels = np.zeros(foreground.size[::-1], dtype=bool)
+    if foreground_completion_mask is not None:
+        foreground_completion_coverage = coverage(foreground_completion_mask)
+        if foreground_completion_mask.size == foreground.size:
+            requested_completion = np.asarray(
+                foreground_completion_mask, dtype=np.uint8
+            )
+            completion_pixels = requested_completion > 4
+            foreground_alpha_pixels = np.asarray(
+                alpha(foreground), dtype=np.uint8
+            )
+            completion_fully_covered = (
+                bool(
+                    np.all(
+                        foreground_alpha_pixels[completion_pixels].astype(np.int16)
+                        + 4
+                        >= requested_completion[completion_pixels].astype(np.int16)
+                    )
+                )
+                if completion_pixels.any()
+                else False
+            )
+            if foreground_completion_coverage <= 0.0001:
+                errors.append("Foreground completion mask is empty")
+            elif not completion_fully_covered:
+                errors.append("Foreground alpha does not cover the UI completion mask")
+            if opaque_subject_mask.size == foreground.size:
+                # 被人物遮挡的 UI 补全只能填在源人物占据的区域。按画布尺寸给
+                # 抗锯齿边缘保留约 1/500 画宽的容差，禁止借补全扩大或重绘 UI。
+                edge_margin = max(1, round(foreground.width / 500))
+                allowed_occlusion = opaque_subject_mask.filter(
+                    ImageFilter.MaxFilter(edge_margin * 2 + 1)
+                )
+                allowed_pixels = np.asarray(allowed_occlusion, dtype=np.uint8) > 4
+                completion_outside_subject = np.logical_and(
+                    completion_pixels, ~allowed_pixels
+                )
+                completion_inside_subject_occlusion = not bool(
+                    completion_outside_subject.any()
+                )
+                if not completion_inside_subject_occlusion:
+                    errors.append(
+                        "Foreground completion mask extends outside the source-visible subject occlusion"
+                    )
+
     character_coverage = None
     if character is not None:
         character_coverage = coverage(alpha(character))
@@ -138,13 +214,16 @@ def main() -> int:
                 source_pixels[..., :3] != foreground_pixels[..., :3], axis=2
             )
             source_rgb_preserved = not bool(rgb_mismatch.any())
-            opaque_pixels = foreground_pixels[..., 3] >= 250
+            opaque_pixels = np.logical_and(
+                foreground_pixels[..., 3] >= 250,
+                ~completion_pixels,
+            )
             opaque_source_rgb_preserved = not bool(
                 np.logical_and(rgb_mismatch, opaque_pixels).any()
             )
             if not opaque_source_rgb_preserved:
                 errors.append(
-                    "Opaque foreground RGB differs from the normalized source"
+                    "Opaque source-owned foreground RGB differs from the normalized source"
                 )
             elif not source_rgb_preserved:
                 warnings.append(
@@ -205,7 +284,7 @@ def main() -> int:
                 else "Visually confirm foreground contains only the fully opaque main subject, subject-linked elements that orbit, surround, frame, overlap, or are emitted or controlled by it, the card frame, panels, and information; reject unrelated scenery."
             ),
             (
-                "Visually confirm foreground contains only source-visible subject-linked effects, interface, text, panels, and frame, with no duplicated character or unrelated scenery."
+                "Visually confirm foreground contains the complete upper interface, text, panels, and frame, including smooth generated continuation wherever the source character interrupted them, with no duplicated character or unrelated scenery."
                 if character is not None
                 else "Merged foreground mode is active; no independent character layer is expected."
             ),
@@ -219,6 +298,10 @@ def main() -> int:
         review_items.append(
             "Contour and bloom are neutral black maps; line emission is intentionally disabled."
         )
+    if character is not None:
+        review_items.append(
+            "Confirm the runtime stacking is always background -> character -> complete UI. If ui_crossing_mode is none, verify the source character never interrupts a continuous frame, panel, or UI stroke. If completed, verify the restored segment covers the moving character without a gap and changes no source-visible UI pixel."
+        )
     report = {
         "ok": not errors,
         "canvas": list(foreground.size),
@@ -230,6 +313,14 @@ def main() -> int:
             else None
         ),
         "foreground_coverage": round(foreground_coverage, 6),
+        "ui_crossing_mode": args.ui_crossing_mode,
+        "foreground_completion_coverage": round(
+            foreground_completion_coverage, 6
+        ),
+        "foreground_completion_fully_covered": completion_fully_covered,
+        "foreground_completion_inside_subject_occlusion": (
+            completion_inside_subject_occlusion
+        ),
         "character_coverage": (
             round(character_coverage, 6)
             if character_coverage is not None
