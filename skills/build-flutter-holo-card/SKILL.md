@@ -55,7 +55,7 @@ Preserve one full canvas and aspect ratio for every file. Never independently cr
 
 `layered-3d` delivers six runtime images:
 
-- `source.png`: normalized supplied card and static card-shape Alpha;
+- `source.png`: normalized supplied card with clean antialiased transparent corners; its Alpha is the static card-shape mask;
 - `background.png`: complete scenery with concealed areas repaired;
 - `character.png`: continuous colored character, transparent outside it;
 - `foreground.png`: complete UI/frame and any intentionally upper subject-linked effect, with character-occluded UI continuity restored;
@@ -68,11 +68,13 @@ Never retain the main subject in both `character.png` and `foreground.png`.
 
 ## Build and review resources
 
-1. Normalize the source without cropping:
+1. Normalize the source without cropping and establish its static card-shape Alpha:
 
 ```bash
 python scripts/normalize_source.py --source input.png --output source.png --width 1000
 ```
+
+Omit shape arguments only when the supplied image already has useful transparent card corners. For an opaque rectangular input, inspect the actual outline and pass either `--corner-radius-ratio 0.05` (replace `0.05` with the measured width-relative radius) or a reviewed full-canvas grayscale `--card-mask card-shape-mask.png`. Never accept opaque corner pixels in `source.png`.
 
 2. Generate the colored primary layers using the exact prompts and review loop in the resource workflow. Treat generated color and Alpha preparation as separate stages.
 3. When a character or UI result contains an opaque matte, prepare one reviewed, full-canvas grayscale Alpha mask for the actual returned image. Do not globally remove a color from artwork. Normalize the character with:

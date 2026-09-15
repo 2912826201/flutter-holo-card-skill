@@ -26,7 +26,7 @@ def coverage(mask: Image.Image, threshold: int = 128) -> float:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path)
+    parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--background", required=True, type=Path)
     parser.add_argument("--foreground", required=True, type=Path)
     parser.add_argument("--character", type=Path)
@@ -61,13 +61,8 @@ def main() -> int:
     }
     if character is not None:
         images["character"] = character
-    source = (
-        ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
-        if args.source
-        else None
-    )
-    if source is not None:
-        images["source"] = source
+    source = ImageOps.exif_transpose(Image.open(args.source)).convert("RGBA")
+    images["source"] = source
     foreground_completion_mask = (
         ImageOps.exif_transpose(
             Image.open(args.foreground_completion_mask)
@@ -84,6 +79,22 @@ def main() -> int:
     sizes = {name: image.size for name, image in images.items()}
     if len(set(sizes.values())) != 1:
         errors.append(f"Canvas mismatch: {sizes}")
+
+    source_alpha = alpha(source)
+    source_corner_alphas = [
+        source_alpha.getpixel((0, 0)),
+        source_alpha.getpixel((source.width - 1, 0)),
+        source_alpha.getpixel((0, source.height - 1)),
+        source_alpha.getpixel((source.width - 1, source.height - 1)),
+    ]
+    source_card_mask_valid = bool(
+        source_alpha.getextrema()[0] <= 4
+        and all(value <= 4 for value in source_corner_alphas)
+    )
+    if not source_card_mask_valid:
+        errors.append(
+            "Source card-shape Alpha must make all four card corners transparent"
+        )
 
     subject_coverage = coverage(opaque_subject_mask)
     subject_fully_opaque = False
@@ -123,7 +134,7 @@ def main() -> int:
     background_alpha = alpha(background)
     background_coverage = coverage(background_alpha)
     background_missing_card_coverage = None
-    if source is not None and source.size == background.size:
+    if source.size == background.size:
         source_card_pixels = np.asarray(alpha(source), dtype=np.uint8) > 4
         missing_background_pixels = np.logical_and(
             source_card_pixels,
@@ -132,16 +143,31 @@ def main() -> int:
         background_missing_card_coverage = float(missing_background_pixels.mean())
         if missing_background_pixels.any():
             errors.append("Background is not opaque across the source card shape")
-    elif source is None and background_coverage < 0.9:
-        warnings.append(
-            "Background coverage is below the review guide; pass --source to validate the actual card shape"
-        )
 
     foreground_coverage = coverage(alpha(foreground))
     if foreground_coverage <= 0.001:
         errors.append("Foreground alpha is empty")
     elif foreground_coverage >= 0.999:
         errors.append("Foreground has no transparent scenery region")
+
+    source_shape_spill: dict[str, float] = {}
+    if source.size == foreground.size:
+        outside_card_pixels = np.asarray(source_alpha, dtype=np.uint8) <= 4
+        for layer_name, layer in (
+            ("foreground", foreground),
+            ("character", character),
+        ):
+            if layer is None or layer.size != source.size:
+                continue
+            spill_pixels = np.logical_and(
+                np.asarray(alpha(layer), dtype=np.uint8) > 4,
+                outside_card_pixels,
+            )
+            source_shape_spill[layer_name] = float(spill_pixels.mean())
+            if spill_pixels.any():
+                errors.append(
+                    f"{layer_name.capitalize()} Alpha spills outside the source card shape"
+                )
 
     foreground_completion_coverage = 0.0
     completion_fully_covered = None
@@ -203,32 +229,31 @@ def main() -> int:
 
     source_rgb_preserved = None
     opaque_source_rgb_preserved = None
-    if source is not None:
-        if source.size != foreground.size:
-            errors.append("Source canvas differs from foreground")
-            source_rgb_preserved = False
-        else:
-            source_pixels = np.asarray(source, dtype=np.uint8)
-            foreground_pixels = np.asarray(foreground, dtype=np.uint8)
-            rgb_mismatch = np.any(
-                source_pixels[..., :3] != foreground_pixels[..., :3], axis=2
+    if source.size != foreground.size:
+        errors.append("Source canvas differs from foreground")
+        source_rgb_preserved = False
+    else:
+        source_pixels = np.asarray(source, dtype=np.uint8)
+        foreground_pixels = np.asarray(foreground, dtype=np.uint8)
+        rgb_mismatch = np.any(
+            source_pixels[..., :3] != foreground_pixels[..., :3], axis=2
+        )
+        source_rgb_preserved = not bool(rgb_mismatch.any())
+        opaque_pixels = np.logical_and(
+            foreground_pixels[..., 3] >= 250,
+            ~completion_pixels,
+        )
+        opaque_source_rgb_preserved = not bool(
+            np.logical_and(rgb_mismatch, opaque_pixels).any()
+        )
+        if not opaque_source_rgb_preserved:
+            errors.append(
+                "Opaque source-owned foreground RGB differs from the normalized source"
             )
-            source_rgb_preserved = not bool(rgb_mismatch.any())
-            opaque_pixels = np.logical_and(
-                foreground_pixels[..., 3] >= 250,
-                ~completion_pixels,
+        elif not source_rgb_preserved:
+            warnings.append(
+                "Translucent foreground RGB differs from source; confirm it is intentional material-color decontamination"
             )
-            opaque_source_rgb_preserved = not bool(
-                np.logical_and(rgb_mismatch, opaque_pixels).any()
-            )
-            if not opaque_source_rgb_preserved:
-                errors.append(
-                    "Opaque source-owned foreground RGB differs from the normalized source"
-                )
-            elif not source_rgb_preserved:
-                warnings.append(
-                    "Translucent foreground RGB differs from source; confirm it is intentional material-color decontamination"
-                )
 
     red, green, blue, contour_alpha = contour.split()
     if ImageChops.difference(red, green).getbbox() or ImageChops.difference(
@@ -277,6 +302,7 @@ def main() -> int:
     review_items.extend(
         [
             "Visually confirm that the background contains no subject, text, or frame residue.",
+            "Confirm source.png has clean antialiased transparent card corners while background.png remains full-bleed behind that static card-shape mask.",
             "Visually confirm the opaque subject mask covers every source-visible main-subject pixel and nothing else.",
             (
                 "Visually confirm character is continuous, fully opaque over every source-visible subject pixel, and contains no scenery, text, panels, or card frame."
@@ -306,6 +332,11 @@ def main() -> int:
         "ok": not errors,
         "canvas": list(foreground.size),
         "effect_mode": effect_mode,
+        "source_card_mask_valid": source_card_mask_valid,
+        "source_corner_alphas": source_corner_alphas,
+        "source_shape_spill_coverage": {
+            name: round(value, 6) for name, value in source_shape_spill.items()
+        },
         "background_coverage": round(background_coverage, 6),
         "background_missing_card_coverage": (
             round(background_missing_card_coverage, 6)

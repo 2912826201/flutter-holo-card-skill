@@ -35,6 +35,7 @@ TEMPORARY_FILES = {
     "foreground-completion-generated.png",
     "foreground-completion-selection.png",
     "foreground-completion-mask.png",
+    "card-shape-mask.png",
     "foreground-presence-mask.png",
     "foreground-visible-subject-mask.png",
     "foreground-opacity-selection.png",

@@ -7,7 +7,7 @@ Support both contracts:
 - layered-3d: render background -> character -> complete interface/frame foreground. Apply contour and bloom to character before interface compositing so interface Alpha occludes both. This fixed order overrides any mixed overlap in the flat source: UI that was partly hidden by the character must already be restored in `foreground.png`.
 - merged-2d: render background -> merged foreground and apply contour/bloom to that foreground.
 
-Load source Alpha as the static card shape. It clips background in both modes and clips the complete merged-2d result. In layered-3d, a 160% transparent painter surface maps output coordinates through p=(uv-.5)*1.6+.5; only positive-depth character and interface pixels may extend beyond the static mask. Never let repaired-background Alpha define the card shape.
+Load the validated antialiased `source.png` Alpha as the static card shape. Its four outer corners must be transparent even when the supplied raster was opaque. It clips background in both modes and clips the complete merged-2d result. In layered-3d, a 160% transparent painter surface maps output coordinates through p=(uv-.5)*1.6+.5; only positive-depth character and interface pixels may move beyond the static mask. Never let repaired-background Alpha define the card shape or clip the full-bleed background asset itself, because shifted sampling needs scenery beyond the rounded boundary.
 
 Use one normalized view vector for every internal effect:
 
@@ -92,6 +92,7 @@ This prevents a lower-half touch from immediately pitching the card before the u
 ## Required tests
 
 - Shader loads with six layered-3d runtime images and five merged-2d images.
+- Source card-shape Alpha has four transparent corners; foreground and character contain no source-space Alpha outside it, while background stays full-bleed.
 - Optional character input selects layered-3d; its absence selects merged-2d without a second component.
 - Layered-3d uses a 160% unclipped painter surface while merged-2d stays at card bounds.
 - Layered-3d resources explicitly declare whether character-over-UI crossings are absent or completed; a completed foreground stays continuous over the moving character.

@@ -15,6 +15,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills" / "build-flutter-holo-card" / "scripts"
 
 
+def rounded_card(
+    size: tuple[int, int],
+    color: tuple[int, int, int],
+) -> Image.Image:
+    image = Image.new("RGBA", size, (*color, 0))
+    radius = max(3, round(size[0] * 0.08))
+    ImageDraw.Draw(image).rounded_rectangle(
+        (0, 0, size[0] - 1, size[1] - 1),
+        radius=radius,
+        fill=(*color, 255),
+    )
+    return image
+
+
 class ScriptTests(unittest.TestCase):
     def test_effect_modes_only_fallback_on_explicit_safety_refusal(self) -> None:
         skill = (
@@ -117,6 +131,7 @@ class ScriptTests(unittest.TestCase):
                 b"temporary"
             )
             (root / "foreground-completion-mask.png").write_bytes(b"temporary")
+            (root / "card-shape-mask.png").write_bytes(b"temporary")
             (root / "foreground-visible-subject-mask.png").write_bytes(
                 b"temporary"
             )
@@ -158,6 +173,7 @@ class ScriptTests(unittest.TestCase):
                 (root / "foreground-completion-selection.png").exists()
             )
             self.assertFalse((root / "foreground-completion-mask.png").exists())
+            self.assertFalse((root / "card-shape-mask.png").exists())
             self.assertFalse(
                 (root / "foreground-visible-subject-mask.png").exists()
             )
@@ -489,11 +505,13 @@ class ScriptTests(unittest.TestCase):
             contour = root / "character_contour.png"
             bloom = root / "character_bloom.png"
 
-            source_image = Image.new("RGBA", (100, 140), (80, 100, 120, 255))
+            source_image = rounded_card((100, 140), (80, 100, 120))
             source_image.save(source)
-            source_image.save(background)
+            Image.new("RGBA", source_image.size, (80, 100, 120, 255)).save(
+                background
+            )
             foreground_image = source_image.copy()
-            foreground_alpha = Image.new("L", source_image.size, 255)
+            foreground_alpha = source_image.getchannel("A")
             ImageDraw.Draw(foreground_alpha).rectangle((35, 35, 65, 105), fill=0)
             foreground_image.putalpha(foreground_alpha)
             foreground_image.save(foreground)
@@ -560,9 +578,11 @@ class ScriptTests(unittest.TestCase):
             contour = root / "character_contour.png"
             bloom = root / "character_bloom.png"
 
-            source_image = Image.new("RGBA", (100, 140), (70, 90, 120, 255))
+            source_image = rounded_card((100, 140), (70, 90, 120))
             source_image.save(source)
-            source_image.save(background)
+            Image.new("RGBA", source_image.size, (70, 90, 120, 255)).save(
+                background
+            )
 
             foreground_image = source_image.copy()
             foreground_alpha = Image.new("L", source_image.size, 0)
@@ -632,12 +652,69 @@ class ScriptTests(unittest.TestCase):
             self.assertTrue(report["subject_fully_opaque"])
             self.assertIsNotNone(report["character_coverage"])
 
-    def test_normalize_source_preserves_aspect_without_crop(self) -> None:
+    def test_normalize_source_requires_and_builds_rounded_card_alpha(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
             output = root / "normalized.png"
             Image.new("RGBA", (50, 70), (20, 40, 60, 255)).save(source)
+            rejected = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "normalize_source.py"),
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(output),
+                    "--width",
+                    "1000",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("no usable rounded card-shape Alpha", rejected.stderr)
+
+            normalized = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "normalize_source.py"),
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(output),
+                    "--width",
+                    "1000",
+                    "--corner-radius-ratio",
+                    "0.05",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(normalized.stdout)
+            self.assertEqual(report["working_canvas"], [1000, 1400])
+            self.assertFalse(report["cropped"])
+            self.assertEqual(report["card_mask_mode"], "rounded_rectangle")
+            self.assertEqual(report["corner_alphas"], [0, 0, 0, 0])
+            with Image.open(output) as normalized_image:
+                self.assertEqual(normalized_image.size, (1000, 1400))
+                self.assertEqual(
+                    [
+                        normalized_image.getpixel((0, 0))[3],
+                        normalized_image.getpixel((999, 0))[3],
+                        normalized_image.getpixel((0, 1399))[3],
+                        normalized_image.getpixel((999, 1399))[3],
+                    ],
+                    [0, 0, 0, 0],
+                )
+
+    def test_normalize_source_preserves_existing_card_alpha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            output = root / "normalized.png"
+            rounded_card((50, 70), (20, 40, 60)).save(source)
             normalized = subprocess.run(
                 [
                     sys.executable,
@@ -654,10 +731,43 @@ class ScriptTests(unittest.TestCase):
                 text=True,
             )
             report = json.loads(normalized.stdout)
-            self.assertEqual(report["working_canvas"], [1000, 1400])
-            self.assertFalse(report["cropped"])
-            with Image.open(output) as normalized_image:
-                self.assertEqual(normalized_image.size, (1000, 1400))
+            self.assertEqual(report["card_mask_mode"], "source_alpha")
+            self.assertEqual(report["corner_alphas"], [0, 0, 0, 0])
+
+    def test_clip_layer_to_card_preserves_rgb_and_removes_corner_alpha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            layer = root / "foreground-before.png"
+            output = root / "foreground.png"
+            rounded_card((100, 140), (20, 40, 60)).save(source)
+            Image.new("RGBA", (100, 140), (180, 90, 130, 255)).save(layer)
+
+            clipped = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "clip_layer_to_card.py"),
+                    "--source",
+                    str(source),
+                    "--layer",
+                    str(layer),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            report = json.loads(clipped.stdout)
+            before = Image.open(layer).convert("RGBA")
+            after = Image.open(output).convert("RGBA")
+            self.assertTrue(report["rgb_preserved"])
+            self.assertGreater(report["removed_outside_card_coverage"], 0)
+            self.assertEqual(
+                before.convert("RGB").tobytes(), after.convert("RGB").tobytes()
+            )
+            self.assertEqual(report["corner_alphas"], [0, 0, 0, 0])
+            self.assertEqual(after.getpixel((50, 70))[3], 255)
 
     def test_prepare_foreground_preserves_source_rgb(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -754,7 +864,7 @@ class ScriptTests(unittest.TestCase):
             foreground = root / "foreground.png"
             completion_mask = root / "foreground-completion-mask.png"
 
-            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            source_image = rounded_card((100, 140), (30, 70, 120))
             source_draw = ImageDraw.Draw(source_image)
             source_draw.rectangle((5, 64, 39, 75), fill=(245, 245, 245, 255))
             source_draw.rectangle((61, 64, 94, 75), fill=(245, 245, 245, 255))
@@ -833,7 +943,7 @@ class ScriptTests(unittest.TestCase):
             contour = root / "contour.png"
             bloom = root / "bloom.png"
 
-            source_image = Image.new("RGBA", (100, 140), (30, 70, 120, 255))
+            source_image = rounded_card((100, 140), (30, 70, 120))
             source_draw = ImageDraw.Draw(source_image)
             source_draw.rectangle((5, 64, 39, 75), fill=(245, 245, 245, 255))
             source_draw.rectangle((61, 64, 94, 75), fill=(245, 245, 245, 255))
@@ -1122,9 +1232,11 @@ class ScriptTests(unittest.TestCase):
             contour = root / "contour.png"
             bloom = root / "bloom.png"
 
-            source_image = Image.new("RGBA", (40, 56), (20, 40, 60, 255))
+            source_image = rounded_card((40, 56), (20, 40, 60))
             source_image.save(source)
-            source_image.save(background)
+            Image.new("RGBA", source_image.size, (20, 40, 60, 255)).save(
+                background
+            )
 
             source_pixels = np.asarray(source_image, dtype=np.uint8)
             foreground_pixels = source_pixels.copy()
@@ -1179,6 +1291,7 @@ class ScriptTests(unittest.TestCase):
     def test_prepare_and_check_asset_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            source = root / "source.png"
             background = root / "background.png"
             foreground = root / "foreground.png"
             subject_mask = root / "subject-mask.png"
@@ -1188,15 +1301,18 @@ class ScriptTests(unittest.TestCase):
             bloom = root / "bloom.png"
             overlay = root / "overlay.png"
 
-            background_image = Image.new("RGBA", (100, 140), (0, 0, 0, 0))
-            ImageDraw.Draw(background_image).rounded_rectangle(
-                (1, 1, 98, 138), radius=8, fill=(20, 60, 100, 255)
+            source_image = rounded_card((100, 140), (20, 60, 100))
+            source_image.save(source)
+            background_image = Image.new(
+                "RGBA", (100, 140), (20, 60, 100, 255)
             )
             background_image.save(background)
-            foreground_image = Image.new("RGBA", (100, 140), (0, 0, 0, 0))
-            ImageDraw.Draw(foreground_image).rectangle(
-                (12, 10, 88, 130), fill=(220, 80, 120, 255)
+            foreground_image = source_image.copy()
+            foreground_alpha = Image.new("L", foreground_image.size, 0)
+            ImageDraw.Draw(foreground_alpha).rectangle(
+                (12, 10, 88, 130), fill=255
             )
+            foreground_image.putalpha(foreground_alpha)
             foreground_image.save(foreground)
             subject_mask_image = Image.new("L", foreground_image.size, 0)
             ImageDraw.Draw(subject_mask_image).rectangle((15, 15, 30, 35), fill=255)
@@ -1258,6 +1374,8 @@ class ScriptTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(SCRIPTS / "check_assets.py"),
+                    "--source",
+                    str(source),
                     "--background",
                     str(background),
                     "--foreground",
@@ -1328,16 +1446,22 @@ class ScriptTests(unittest.TestCase):
                 "Opaque source-owned foreground RGB differs from the normalized source",
                 report["errors"],
             )
+            self.assertIn(
+                "Source card-shape Alpha must make all four card corners transparent",
+                report["errors"],
+            )
 
     def test_check_assets_rejects_transparent_subject(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            source = root / "source.png"
             background = root / "background.png"
             foreground = root / "foreground.png"
             subject_mask = root / "subject-mask.png"
             contour = root / "contour.png"
             bloom = root / "bloom.png"
 
+            rounded_card((40, 56), (20, 40, 60)).save(source)
             Image.new("RGBA", (40, 56), (20, 40, 60, 255)).save(background)
             foreground_image = Image.new("RGBA", (40, 56), (0, 0, 0, 0))
             ImageDraw.Draw(foreground_image).rectangle(
@@ -1356,6 +1480,8 @@ class ScriptTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(SCRIPTS / "check_assets.py"),
+                    "--source",
+                    str(source),
                     "--background",
                     str(background),
                     "--foreground",

@@ -25,6 +25,8 @@ Subject-linked rings, auras, magic trails, and similar effects belong to the lay
 
 Keep every layer on the source canvas. Generated layers may have another resolution only when their aspect ratio and full-canvas framing match; resize the entire canvas once and never fit a content bounding box.
 
+The PNG canvas is rectangular, but the visible card must not be. `source.png` must carry an antialiased card-shape Alpha with all four outer corner pixels transparent. `foreground.png` and `character.png` must be Alpha-clipped to that shape during preparation. Keep `background.png` full-bleed and opaque behind the shape so parallax never samples an empty edge; the Shader clips it with the static `source.png` Alpha.
+
 ## Primary review loop
 
 Review each layer independently:
@@ -75,6 +77,18 @@ Create a registered grayscale completion mask for that returned image. Use nonze
 
 Treat the generated color result and its Alpha as separate artifacts.
 
+Before preparing any moving layer, inspect the supplied image corners. If they are already genuinely transparent, preserve that Alpha. If the input is an opaque rectangle, use a measured rounded rectangle or reviewed grayscale card-shape mask during normalization:
+
+```bash
+python scripts/normalize_source.py \
+  --source input.png \
+  --output source.png \
+  --width 1000 \
+  --corner-radius-ratio 0.05
+```
+
+`0.05` is only a common starting value, expressed relative to working width; match the visible card outline. For nonstandard silhouettes, replace it with `--card-mask card-shape-mask.png`. The mask must be full-canvas grayscale, white inside the physical card, black outside, and gray only on the antialiased boundary. Do not remove corner colors by chroma key because white, gray, or other corner colors can also belong to the card artwork.
+
 - Preserve genuine useful Alpha.
 - For an opaque checkerboard/matte result, create one exact, registered grayscale mask for the actual returned image: `0` removes confirmed matte, `255` retains artwork, intermediate values preserve antialiased coverage.
 - Build the mask only from inspected matte regions. Never globally remove green, gray, white, brightness, or saturation from the full canvas; those colors may belong to the character or UI.
@@ -84,6 +98,15 @@ Treat the generated color result and its Alpha as separate artifacts.
 For character normalization, use `prepare_generated_character.py --alpha-mask`. Also supply an independently reviewed source-space visible-subject mask. The tool must report zero missing visible coverage before it applies the Alpha-255 lock; otherwise repair the generated character or its mask and rerun.
 
 For source-pixel UI or merged foreground, use `prepare_foreground.py --alpha-mask`. In merged mode, also supply the visible-subject mask so every accepted subject pixel is forced to Alpha 255.
+
+Both `prepare_foreground.py` and `prepare_generated_character.py` intersect their output Alpha with `source.png`. To repair an already prepared movable layer after correcting the source mask without changing its RGB, run:
+
+```bash
+python scripts/clip_layer_to_card.py \
+  --source source.png \
+  --layer foreground.png \
+  --output foreground.png
+```
 
 Opaque layered UI:
 
@@ -186,6 +209,7 @@ If line quality is wrong, regenerate the line art or correct one safe global aff
 `check_assets.py` verifies only machine-observable invariants:
 
 - matching full canvases;
+- transparent static card corners in `source.png` and no foreground/character Alpha outside that card shape;
 - background opacity across the source card shape;
 - useful transparent regions in movable layers;
 - full opacity of source-visible subject pixels;
