@@ -1,134 +1,78 @@
 ---
 name: build-flutter-holo-card
-description: Build and validate Flutter holographic cards from one raster card image. Uses a holo-card-compatible three-layer primary effect with repaired scenery, a continuous character, source-faithful UI/frame, signed parallax, contour glow, foil, and touch-safe tilt. Supports asset-only or full implementation plus auto, layered-3d, and merged-2d selection. In auto mode, keep repairing the primary route for technical or quality failures and use merged-2d only after an explicit image-provider safety or policy refusal of independent-character generation.
+description: Build and validate a two-layer Flutter holographic card from one raster card image. Use a repaired opaque background plus one source-faithful foreground containing every character, card UI element, frame, panel, and foreground effect, with white sketch contours across the complete foreground.
 ---
 
 # Build Flutter Holo Card
 
-Use the `$holo-card` composition as the primary standard:
+Build one consistent two-layer effect:
 
-1. repaired opaque scenery;
-2. one continuous colored character and its structure glow;
-3. complete typography, panels, symbols, credits, and decorative frame above the character, including UI segments originally hidden by it.
+1. `background.png`: complete opaque scenery with concealed regions repaired;
+2. `foreground.png`: every character, foreground object/effect, title, number, symbol, panel, credit, and decorative frame, preserving the source stacking and source RGB.
 
-Keep the stacking order `background -> character -> UI` at every signed depth. A quality defect is a request to repair the current layer, never permission to change effect mode.
+The foreground moves as one plane above the background. Do not generate an independent character layer, split UI from characters, reconstruct hidden character anatomy, or introduce alternate effect modes.
 
-Before running bundled Python scripts, install missing dependencies with `python -m pip install -r requirements.txt`. Do not replace the scripts with ad-hoc extraction code.
+Before running bundled Python scripts, install missing dependencies with `python -m pip install -r requirements.txt`. Use the bundled scripts rather than replacing them with ad-hoc extraction code.
 
-## Select scope and effect
+## Select scope
 
-Select one scope:
+- **asset-only:** prepare, align, review, validate, and clean the five runtime images; do not modify application code.
+- **full (default):** complete the asset workflow, then integrate and test the Flutter component.
 
-- **asset-only:** Generate, prepare, align, validate, and clean runtime images only. Do not modify application code.
-- **full:** Complete the resource workflow, then integrate the Flutter component and tests.
+## Prepare resources
 
-Select one effect:
+Read [references/resource-workflow.md](references/resource-workflow.md) before creating or repairing assets.
 
-- **effect=auto (default):** Start and remain on `layered-3d`. Switch to `merged-2d` only when the image provider explicitly returns a safety/policy refusal for the independent-character generation request.
-- **effect=layered-3d:** Use the same primary route. An explicit safety/policy refusal may fall back unless the user also specifies `strict=true`; strict mode stops and reports the refusal.
-- **effect=merged-2d:** Skip independent-character generation because the user explicitly selected the compatible two-layer effect.
+Keep every file on one full canvas and aspect ratio. Never independently crop, fit, recenter, stretch, or locally warp a layer.
 
-Scope and effect are independent. Always report `requested_effect`, `effective_effect`, and the provider's exact `fallback_reason` when they differ.
+The runtime contract is exactly five images:
 
-## Classify outcomes before acting
+- `source.png`: normalized supplied card with reviewed antialiased transparent card corners; its Alpha defines the static card shape;
+- `background.png`: opaque, full-canvas scenery with the foreground and card interface removed and concealed areas repaired;
+- `foreground.png`: source RGB for every non-background element, with transparent scenery;
+- `foreground_contour.png`: opaque grayscale white sketch-line core for all visible foreground elements;
+- `foreground_bloom.png`: opaque packed near/wide bloom for the same sketch lines.
 
-Use these mutually exclusive outcomes:
+Required workflow:
 
-| Outcome | Evidence | Required action |
-|---|---|---|
-| Explicit safety refusal | The image provider explicitly says the request violates safety, policy, legality, or content rules | Preserve the exact message. For a refused character request, follow the selected fallback rule. Do not evade or reword around the refusal. |
-| Technical failure | Timeout, transport error, tool crash, missing Alpha, opaque matte, wrong file format, or interrupted generation without a policy refusal | Resume or retry the same primary stage. Never change effect mode. |
-| Quality failure | Missing/shifted artwork, dirty matte, repeated scenery, bad spelling, wrong layer membership, alignment drift, or a failed visual review | Repair or regenerate only that layer and review it again. Never change effect mode. |
-| Deterministic validation failure | A bundled script reports a canvas, Alpha, RGB, map-format, or alignment invariant | Fix the inputs or preparation step in the current mode, then rerun the check. Never change effect mode. |
+1. Inspect the supplied image at full resolution and classify scenery versus the combined foreground.
+2. Normalize the source without cropping and establish its card-shape Alpha.
+3. Generate and visually review only the repaired background color plate.
+4. Create a reviewed full-canvas foreground Alpha mask, then build `foreground.png` from source pixels with `prepare_foreground.py`. Never repaint source-visible foreground RGB.
+5. Generate white sketch line art on solid black from the accepted `foreground.png`. Include visible contours from every foreground element, including characters, typography, symbols, panels, foreground effects, and the decorative frame. Do not include scenery edges, filled white regions, shading, hatching, texture, or invented lines.
+6. Normalize the registered line art, then build the contour and bloom maps.
+7. Run `check_assets.py`. Fix deterministic errors and review every reported visual item.
+8. After visual review passes, run `cleanup_assets.py`. Keep only the five runtime images.
 
-Do not infer a safety refusal from words such as `failed`, `unusable`, `cannot isolate`, `review rejected`, or a non-zero script exit code. Only an explicit refusal payload returned by the image generation/edit provider for the independent-character request qualifies. The agent's own quality judgment is never refusal evidence. Preserve the provider message verbatim.
-
-If a technical failure still cannot be recovered after reasonable retries, report that primary stage as blocked and retain its intermediates for diagnosis. Do not manufacture a policy reason and do not change effect mode.
-
-If shared background generation is explicitly refused, stop and report it: `merged-2d` also requires that background and therefore cannot honestly bypass the refusal. If contour generation alone is explicitly refused, keep the selected effect mode and create the neutral contour/bloom pair; this is a line-effect fallback, not an effect-mode fallback.
-
-## Establish the resource contract
-
-Read [references/resource-workflow.md](references/resource-workflow.md) before generating or repairing images.
-
-Preserve one full canvas and aspect ratio for every file. Never independently crop, fit, recenter, stretch, or locally warp a layer.
-
-`layered-3d` delivers six runtime images:
-
-- `source.png`: normalized supplied card with clean antialiased transparent corners; its Alpha is the static card-shape mask;
-- `background.png`: complete scenery with concealed areas repaired;
-- `character.png`: continuous colored character, transparent outside it;
-- `foreground.png`: complete UI/frame and any intentionally upper subject-linked effect, with character-occluded UI continuity restored;
-- `character_contour.png`: opaque grayscale structure core;
-- `character_bloom.png`: opaque two-scale packed bloom.
-
-`merged-2d` delivers the same set without `character.png`; `foreground.png` then contains the source-visible subject, its linked effects, UI, and frame.
-
-Never retain the main subject in both `character.png` and `foreground.png`.
-
-## Build and review resources
-
-1. Normalize the source without cropping and establish its static card-shape Alpha:
-
-```bash
-python scripts/normalize_source.py --source input.png --output source.png --width 1000
-```
-
-Omit shape arguments only when the supplied image already has useful transparent card corners. For an opaque rectangular input, inspect the actual outline and pass either `--corner-radius-ratio 0.05` (replace `0.05` with the measured width-relative radius) or a reviewed full-canvas grayscale `--card-mask card-shape-mask.png`. Never accept opaque corner pixels in `source.png`.
-
-2. Generate the colored primary layers using the exact prompts and review loop in the resource workflow. Treat generated color and Alpha preparation as separate stages.
-3. When a character or UI result contains an opaque matte, prepare one reviewed, full-canvas grayscale Alpha mask for the actual returned image. Do not globally remove a color from artwork. Normalize the character with:
-
-```bash
-python scripts/prepare_generated_character.py \
-  --source source.png \
-  --character character-generated.png \
-  --alpha-mask character-alpha-mask.png \
-  --visible-subject-mask character-visible-mask.png \
-  --output-character character.png \
-  --output-visible-subject-mask foreground-opaque-subject-mask.png \
-  --output-black-preview character-on-black.png \
-  --output-white-preview character-on-white.png \
-  --output-overlay character-alignment-overlay.png \
-  --output-report character-report.json
-```
-
-Omit `--alpha-mask` only when the returned file has genuine useful Alpha. The visible-subject mask is an independently reviewed source-space mask; it guarantees that every source-visible subject pixel is Alpha 255 but must not hide missing generated artwork.
-
-4. Inspect every character/UI crossing before preparing `foreground.png`. In `layered-3d`, always normalize the final order to `character -> complete UI`, even where the source character was painted over the UI. Preserve source pixels for visible UI and generate only the concealed continuation needed to complete an interrupted frame, panel, information bar, or UI stroke. Pass that generated completion and its exact hidden-region mask through `prepare_foreground.py`; never leave a transparent notch around the character. Use the three-state material branch only when the source visibly contains translucent UI through which scenery is visible. Machine checks verify file invariants; the user or reviewer decides semantic membership and visual quality.
-5. Generate structure from `character.png` in `layered-3d` or `foreground.png` in `merged-2d`. Contour is provenance-based, not position-based: retain source-visible silhouettes, overlaps, and defining internal lines, but add no absent line, shading, hatching, or texture synthesis.
-6. Normalize, globally calibrate when needed, and build the contour/bloom maps. A calibration or density warning requests review or regeneration; it never changes the selected effect.
-7. Run `scripts/check_assets.py`. Treat its `errors` as deterministic invariants to fix in the current mode. Treat `warnings` and `required_visual_review` as review items, not automatic rejection or fallback triggers.
-8. After the current mode passes review, run `cleanup_assets.py --effect-mode <effective mode>`. Retain only the five or six runtime images.
-
-If an asset-only request was selected, report the runtime paths and checks, then stop.
+Asset-only work stops after reporting the five paths, commands, deterministic results, and remaining visual caveats.
 
 ## Implement Flutter rendering
 
-Read [references/rendering-contract.md](references/rendering-contract.md). Copy the templates under `assets/flutter/` into the nearest appropriate feature directory and adapt existing project image wrappers rather than creating a competing abstraction.
+For full scope, read [references/rendering-contract.md](references/rendering-contract.md). Copy the templates under `assets/flutter/` into the nearest appropriate feature directory and adapt the existing project's image wrappers rather than adding a competing abstraction.
 
 Preserve these behaviors:
 
-- optional character input selects `layered-3d`; absence selects `merged-2d` in the same component;
-- use one amplified view vector for all parallax and material motion while keeping physical card tilt small;
-- use the holo-card UV coefficients for background, character, and UI;
-- in `layered-3d`, paint on an unclipped 160% transparent surface so positive depth can extend character/UI outside the clipped background;
-- the complete UI always covers character, contour emission, and bloom, regardless of the mixed overlap order in the supplied flat image;
-- keep the foil sweep oriented lower-left to upper-right;
-- keep static state free of foil/glare, record touch-down as the zero-delta origin, and animate release continuously;
-- use neutral black contour/bloom maps to disable refused line generation without a Shader branch.
+- render and move only `background -> foreground`;
+- sample foreground, contour, and bloom from the same UV at every signed depth;
+- use a modest physical card tilt with a stronger, nonsaturating internal view response;
+- let positive depth extend the combined foreground beyond the clipped background on a 160% transparent painter surface;
+- keep the full card aspect ratio instead of stretching it to arbitrary parent constraints;
+- retain a restrained idle foil effect, strengthen it during interaction, and allow `effectStrength == 0` to disable it completely;
+- keep broad prismatic foil, fine diffraction, sparse glints, and glare readable rather than washing out the source art;
+- render the sketch core as predominantly white light with a smaller spectral tint and a real two-scale halo;
+- record touch-down as the zero-delta origin and animate release continuously.
 
-Do not add normal, height, or roughness maps unless the user asks for a different material model.
+Do not add normal, height, roughness, independent character, UI, or occlusion maps unless the user explicitly requests a different material model.
 
 ## Validate and hand off
 
-For resources, inspect each actual layer at full canvas and compare the flat composite before enabling glow. In `layered-3d`, also test signed depth `-3`, `0`, and `+3`; reject duplicated subjects, holes, moving text, dirty matte, contour drift, or any exposed break where a moving character crosses a frame/panel/UI stroke. A source crossing may intentionally change only where the completed UI is moved above a character that originally covered it.
+Compare the flat `background + foreground` composite with `source.png` before enabling foil or glow. At signed depth `-2`, `0`, and `+2`, reject duplicated foreground content, background residue, holes, dirty matte, moving scenery, contour drift, illegible text, or clipped positive-depth foreground. Regenerate a shifted line-art result; do not warp individual contours into place.
 
-For full implementation:
+For full scope:
 
-1. Test resource and Shader loading for six-image and five-image contracts.
-2. Test default, narrow, and wide constraints.
-3. Test touch-down with zero view, drag response on both axes, continuous release, and increased internal sensitivity without increased physical rotation.
-4. Run targeted formatting, analysis, Widget tests, and a debug bundle build.
+1. Test all five resource and Shader loads.
+2. Test bounded, narrow, wide, and one-axis-unbounded layouts without distortion or overflow exceptions.
+3. Test touch-down, drag on both axes, continuous release, idle foil, full activation, and `effectStrength == 0`.
+4. Run targeted formatting, analysis, Widget tests, and a debug build appropriate to the host application.
 
-Report exact paths, commands run, unrun checks, real-device status, reused project components, and each modified `Stack` relationship. Never claim user visual approval or real-device success unless the user supplied it.
+Report exact paths, commands run, unrun checks, and real-device status. Never claim user visual approval or real-device success unless the user supplied it.

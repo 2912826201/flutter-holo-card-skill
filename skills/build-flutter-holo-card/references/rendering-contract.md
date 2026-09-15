@@ -1,105 +1,70 @@
-# Flutter rendering contract
+# Flutter two-layer rendering contract
 
-## Layer order and UVs
+## Composition and parallax
 
-Support both contracts:
+Render exactly `background -> foreground`. The combined foreground owns every character and card-interface element, so its source overlap order remains intact.
 
-- layered-3d: render background -> character -> complete interface/frame foreground. Apply contour and bloom to character before interface compositing so interface Alpha occludes both. This fixed order overrides any mixed overlap in the flat source: UI that was partly hidden by the character must already be restored in `foreground.png`.
-- merged-2d: render background -> merged foreground and apply contour/bloom to that foreground.
+Use `source.png` Alpha as the static card shape. Keep `background.png` opaque and full-canvas; clip its display with the static card shape, but sample enough interior bleed for view motion. Sample `foreground.png`, `foreground_contour.png`, and `foreground_bloom.png` from one identical UV.
 
-Load the validated antialiased `source.png` Alpha as the static card shape. Its four outer corners must be transparent even when the supplied raster was opaque. It clips background in both modes and clips the complete merged-2d result. In layered-3d, a 160% transparent painter surface maps output coordinates through p=(uv-.5)*1.6+.5; only positive-depth character and interface pixels may move beyond the static mask. Never let repaired-background Alpha define the card shape or clip the full-bleed background asset itself, because shifted sampling needs scenery beyond the rounded boundary.
+Paint on a centered 160% transparent surface and map output coordinates with:
 
-Use one normalized view vector for every internal effect:
+```glsl
+vec2 p = (outputUv - 0.5) * 1.6 + 0.5;
+vec2 foregroundUv = p - view * (depth < 0.0 ? 0.055 : 0.075) * depth;
+vec2 backgroundUv = p + view * 0.04;
+```
+
+At zero view, both layers use the source coordinate system exactly; do not center-crop or enlarge the background. A small opposite background shift creates separation during tilt, with clamped full-bleed sampling preventing empty strips. Negative and zero depth remain inside the static card shape. Positive depth may extend foreground pixels beyond the clipped background, while the foreground's own moved Alpha preserves its rounded boundary.
+
+Keep physical rotation modest. Use one amplified view vector for parallax and material motion, with defaults selected so the vector approaches but does not spend a large part of the drag range clamped:
 
 ```text
 view.x = sin(rotateY) * 0.65 * sensitivity
 view.y = sin(rotateX) * 0.65 * sensitivity
 ```
 
-Clamp only after applying sensitivity. The Flutter component uses a small physical
-rotation, so its primary preset uses `viewSensitivity = 4.0` and clamps the final
-view to the holo-card renderer's practical `[-0.5, 0.5]` range. This recreates the
-internal response of the reference's much larger drag angles without making the
-Widget itself rotate excessively.
+The primary component defaults are `depth = 1`, `viewSensitivity = 3`, and `maxTiltRadians = 0.24`.
 
-```glsl
-vec2 characterUv = p - view * (depth < 0.0 ? 0.06 : 0.08) * depth;
-vec2 interfaceUv = p - view * 0.14 * max(depth, 0.0);
-vec2 backgroundUv = (p - 0.5) * 0.5 + 0.5 - view * 0.25;
-```
+## Foil material
 
-In layered-3d, sample character, contour, and bloom at characterUv and foreground at interfaceUv. In merged-2d, sample foreground, contour, and bloom at characterUv. Never fit or offset contour separately.
+Apply foil after the two color layers are composited. Preserve readable source color and contrast:
 
-Do not solve character-over-UI crossings in the Shader. The resource workflow must provide a continuous UI Alpha/RGB plate through every concealed crossing. Live foreground Alpha then covers both the character and its contour/bloom, preventing gaps at all signed depths.
+- one broad lower-left-to-upper-right prism band follows view;
+- a lower-amplitude secondary diffraction wave prevents a flat single-gradient look;
+- sparse micro-glints add texture without covering faces or text;
+- a restrained moving glare adds specular response;
+- idle state retains a low-strength foil field, interaction eases it to full requested strength;
+- `effectStrength == 0` disables foil, glints, glare, contour emission, and bloom.
 
-Keep `depth = 0` as the neutral default from holo-card and preserve its full
-`-3...+3` range. Integrations may select a signed non-zero depth for their intended
-presentation. Depth changes UV displacement only; it never changes layer order or
-scales artwork.
+Do not use a high-opacity rainbow replacement that washes the card toward white. Compose light in linear space and apply display mapping only after contour emission and bloom.
 
-## Foil and sweep
+## White sketch highlight
 
-Retain the source illustration while adding a colored light field:
+`foreground_contour.png` contains the grayscale sketch core. `foreground_bloom.png` packs near blur in R and wide blur in G.
 
-```glsl
-float field = p.x * 0.65 + p.y * 0.4 + view.x * 1.9 + view.y * 0.85;
-float light = pow(max(0.0, 1.0 - abs(fract(field + 0.16) - 0.5) * 2.0), 3.0);
-vec3 spectrum = 0.52 + 0.48 * cos(6.28318 * (phase + vec3(0.0, 0.33, 0.67)));
-vec3 foil = base * (0.64 + spectrum * 0.7) + spectrum * 0.07 * alpha;
-base = mix(base, foil, light * 0.48 * power);
-```
+Sample all three maps with `foregroundUv`. Multiply the core by foreground Alpha. Keep its emission predominantly white with a small spectral tint. The two bloom channels form a genuine halo and therefore must not be multiplied back down to only the one-pixel line core.
 
-With screen Y increasing downward, positive X and Y coefficients produce constant-value bands visually oriented from lower-left to upper-right. Keep pointer and rotation signs consistent with the component template.
+The complete foreground receives sketch highlights: character silhouettes and internal features, foreground effects and objects, glyphs, symbols, panels, insets, logos, and decorative frame strokes. Scenery receives none.
 
-## Contour emission
+## Sizing and interaction
 
-The contour sampler contains only white line core. The bloom sampler contains near blur in R and wide blur in G.
+Preserve the loaded source aspect ratio. Under bounded width and height, fit the card inside the available rectangle and center it. Under one-axis-unbounded constraints, derive the missing dimension from the image aspect ratio. Do not stretch the Shader surface.
 
-When line generation is unavailable, both files are opaque neutral-black maps. Keep loading and sampling them normally; they disable emission without a shader branch or a different resource contract.
+Keep normalized interaction state as `(yaw, pitch)`:
 
-```glsl
-float ownerAlpha = layered ? characterAlpha : foregroundAlpha;
-float uiOcclusion = layered ? 1.0 - foregroundAlpha : 1.0;
-float line = structure * ownerAlpha * uiOcclusion;
-float envelope = smoothstep(0.025, 0.42, light);
-vec3 emissionColor = spectrum * 0.85 + 0.15;
-vec3 emission = emissionColor * line * envelope * power * 40.0 * contourStrength;
-vec3 bloom = emissionColor * (nearBloom * 0.55 + wideBloom * 0.8)
-  * line * envelope * power * 40.0 * contourStrength;
-```
-
-Multiplying blurred bloom by `line` is intentional: it keeps the strong emission confined to generated foreground strokes instead of washing across scenery or flat interiors.
-
-Compose in linear space and apply exponential display mapping after emission and bloom:
-
-```glsl
-vec3 linear = pow(clamp(base, 0.0, 1.0), vec3(2.2));
-vec3 combined = 1.0 - (1.0 - linear) * exp(-(emission * 0.38 + bloom * 0.85));
-vec3 display = pow(clamp(combined, 0.0, 1.0), vec3(1.0 / 2.2));
-```
-
-## Touch interaction
-
-Keep normalized state as `(yaw, pitch)`:
-
-- mouse hover may map both axes from absolute pointer position;
-- touch down changes neither axis and records the drag origin;
-- touch update maps both axes from displacement since drag start;
-- touch release animates the current value to zero with an ease-out curve.
-
-This prevents a lower-half touch from immediately pitching the card before the user drags.
+- mouse hover may map both axes from absolute card position;
+- pointer down records the current position and tilt without changing either axis;
+- drag maps displacement from that origin;
+- release animates continuously from the current value to zero;
+- effect activation eases in on hover/down and returns to the configured idle strength on exit/up.
 
 ## Required tests
 
-- Shader loads with six layered-3d runtime images and five merged-2d images.
-- Source card-shape Alpha has four transparent corners; foreground and character contain no source-space Alpha outside it, while background stays full-bleed.
-- Optional character input selects layered-3d; its absence selects merged-2d without a second component.
-- Layered-3d uses a 160% unclipped painter surface while merged-2d stays at card bounds.
-- Layered-3d resources explicitly declare whether character-over-UI crossings are absent or completed; a completed foreground stays continuous over the moving character.
-- Default, narrow, and wide layouts do not overflow.
-- Drag changes both transform and shader view.
-- Release is continuous before reaching center.
-- Horizontal drag beginning in the lower half leaves `view.y == 0`.
-- Subsequent upward drag makes `view.y > 0`.
-- A stronger sensitivity changes the internal view without increasing physical card rotation.
-- The primary defaults are `depth == 0` and `viewSensitivity == 4.0`.
+- The five images and Shader load, and the Shader compiles without an independent-character branch.
+- The renderer preserves the source aspect ratio in matching, narrow, wide, and one-axis-unbounded constraints.
+- The painter surface is centered at 160% on every card.
+- Touch-down and a horizontal-only first drag leave pitch unchanged; a later upward drag makes pitch positive.
+- Release is continuous and ends centered.
+- Idle strength is nonzero by default, interaction increases it, and `effectStrength == 0` remains zero.
+- The primary defaults are `depth == 1`, `viewSensitivity == 3`, and `maxTiltRadians == 0.24`.
+- Resource tests reject changed foreground RGB, opaque/checkerboard line-art matte, canvas mismatches, contour outside foreground, transparent background, and map-format errors.

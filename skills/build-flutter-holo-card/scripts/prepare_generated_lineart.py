@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize model-generated source-faithful white line art."""
+"""Normalize white sketch line art for the complete combined foreground."""
 
 from __future__ import annotations
 
@@ -23,6 +23,11 @@ def resize_full_canvas(
     return image.resize(size, Image.Resampling.LANCZOS)
 
 
+def smoothstep(values: np.ndarray) -> np.ndarray:
+    clipped = np.clip(values, 0.0, 1.0)
+    return clipped * clipped * (3.0 - 2.0 * clipped)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", required=True, type=Path)
@@ -30,48 +35,76 @@ def main() -> int:
     parser.add_argument("--output-structure", required=True, type=Path)
     parser.add_argument("--output-transparent", type=Path)
     parser.add_argument("--output-report", type=Path)
-    parser.add_argument("--background-cutoff", type=int, default=205)
-    parser.add_argument("--full-line-level", type=int, default=245)
-    parser.add_argument("--maximum-line-coverage", type=float, default=0.12)
+    parser.add_argument("--black-level", type=int, default=32)
+    parser.add_argument("--full-line-level", type=int, default=220)
+    parser.add_argument("--maximum-line-ratio", type=float, default=0.48)
     args = parser.parse_args()
 
-    if not 0 <= args.background_cutoff < args.full_line_level <= 255:
+    if not 0 <= args.black_level < args.full_line_level <= 255:
         raise ValueError(
-            "Background cutoff and full line level must satisfy 0 <= cutoff < full <= 255"
+            "Black and full-line levels must satisfy 0 <= black < full <= 255"
         )
+    if not 0.05 <= args.maximum_line_ratio <= 0.9:
+        raise ValueError("Maximum line ratio must be between 0.05 and 0.9")
 
     reference = ImageOps.exif_transpose(Image.open(args.reference)).convert("RGBA")
     generated = ImageOps.exif_transpose(Image.open(args.lineart)).convert("RGBA")
     original_canvas = generated.size
     generated = resize_full_canvas(generated, reference.size, "Generated line art")
+
     pixels = np.asarray(generated, dtype=np.uint8)
     luminance = np.asarray(generated.convert("L"), dtype=np.float32)
-    alpha = pixels[..., 3].astype(np.float32) / 255.0
-    has_real_transparency = bool(np.any(pixels[..., 3] < 250))
+    generated_alpha = pixels[..., 3].astype(np.float32) / 255.0
+    transparent_fraction = float((pixels[..., 3] <= 4).mean())
+    has_real_transparency = transparent_fraction >= 0.001
 
     if has_real_transparency:
-        # 真实透明输出以 Alpha 为主，并用亮度抑制意外残留的深色内容。
-        coverage = alpha * np.clip(luminance / 224.0, 0.0, 1.0)
+        raw_coverage = generated_alpha * np.clip(luminance / 224.0, 0.0, 1.0)
+        input_mode = "transparent_white_lines"
     else:
-        # 部分生图服务会把透明棋盘格烘焙进 RGB。只提取超过棋盘亮度
-        # 上限的白线覆盖率，不从原图重新检测或重画任何边缘。
-        span = args.full_line_level - args.background_cutoff
-        coverage = np.clip(
-            (luminance - args.background_cutoff) / span,
-            0.0,
-            1.0,
-        )
-        coverage = coverage * coverage * (3.0 - 2.0 * coverage)
+        span = args.full_line_level - args.black_level
+        raw_coverage = smoothstep((luminance - args.black_level) / span)
+        input_mode = "white_lines_on_black"
 
-    structure_pixels = np.rint(coverage * 255.0).astype(np.uint8)
-    line_coverage = float((structure_pixels >= 128).mean())
+    owner_alpha = (
+        np.asarray(reference.getchannel("A"), dtype=np.float32) / 255.0
+    )
+    owner_pixels = owner_alpha >= 0.5
+    outside_owner = owner_alpha <= (4.0 / 255.0)
+    spill_pixels = np.logical_and(raw_coverage >= 0.02, outside_owner)
+    spill_coverage = float(spill_pixels.mean())
+    outside_bright_ratio = (
+        float((luminance[outside_owner] > args.black_level).mean())
+        if outside_owner.any()
+        else 0.0
+    )
+
+    coverage = raw_coverage * owner_alpha
+    structure_pixels = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0).astype(
+        np.uint8
+    )
+    strong_pixels = structure_pixels >= 128
+    line_coverage = float(strong_pixels.mean())
+    owner_coverage = float(owner_pixels.mean())
+    line_ratio = (
+        float(strong_pixels[owner_pixels].mean()) if owner_pixels.any() else 0.0
+    )
+
     errors: list[str] = []
     warnings: list[str] = []
+    if owner_coverage <= 0.001:
+        errors.append("Foreground reference alpha is empty")
     if line_coverage <= 0.0001:
-        errors.append("Generated line art is empty after background removal")
-    if line_coverage >= args.maximum_line_coverage:
+        errors.append("Generated sketch line art is empty")
+    if spill_coverage > 0.0005:
+        errors.append("Sketch line signal spills outside the foreground owner")
+    if not has_real_transparency and outside_bright_ratio > 0.005:
+        errors.append(
+            "Opaque line art must use a uniform solid-black matte; bright or checkerboard matte detected"
+        )
+    if line_ratio >= args.maximum_line_ratio:
         warnings.append(
-            "Generated line art exceeds the review-density guide; inspect for fills, shading, or texture before deciding"
+            "Sketch lines cover much of the foreground; inspect for white fills, shading, or retained matte"
         )
 
     args.output_structure.parent.mkdir(parents=True, exist_ok=True)
@@ -79,10 +112,7 @@ def main() -> int:
     if args.output_transparent:
         args.output_transparent.parent.mkdir(parents=True, exist_ok=True)
         white = np.full_like(structure_pixels, 255)
-        transparent = np.stack(
-            (white, white, white, structure_pixels),
-            axis=2,
-        )
+        transparent = np.stack((white, white, white, structure_pixels), axis=2)
         Image.fromarray(transparent, mode="RGBA").save(args.output_transparent)
 
     report = {
@@ -90,17 +120,19 @@ def main() -> int:
         "reference_canvas": list(reference.size),
         "generated_canvas": list(original_canvas),
         "resized_to_reference": original_canvas != reference.size,
+        "input_mode": input_mode,
         "source_had_real_transparency": has_real_transparency,
-        "opaque_background_removed": not has_real_transparency,
-        "background_cutoff": args.background_cutoff,
-        "full_line_level": args.full_line_level,
+        "foreground_owner_coverage": round(owner_coverage, 6),
         "strong_line_coverage": round(line_coverage, 6),
+        "strong_line_ratio_within_foreground": round(line_ratio, 6),
+        "signal_spill_coverage": round(spill_coverage, 6),
+        "opaque_outside_bright_ratio": round(outside_bright_ratio, 6),
         "errors": errors,
         "warnings": warnings,
         "required_visual_review": [
-            "Accept source-visible internal defining contours such as eyes, mouths, facial markings, fingers, hair or fur locks, garment seams or folds, existing patterns, typography, symbols, effects, panels, logos, and frames; contour does not mean external silhouette only.",
-            "Reject only strokes absent from the source, inferred hidden lines, model-invented features or decoration, shading or texture strokes, and checkerboard backdrop residue.",
-            "Confirm the resized full canvas remains globally registered before affine calibration.",
+            "Confirm white sketch contours cover every foreground category: characters, objects, effects, typography, symbols, panels, credits, insets, logos, and decorative frame.",
+            "Reject scenery edges, filled glyph or panel regions, shading, hatching, texture strokes, invented lines, and matte residue.",
+            "Confirm the full canvas and every local contour remain registered; regenerate a shifted result instead of warping it.",
         ],
     }
     rendered = json.dumps(report, indent=2)

@@ -11,33 +11,34 @@ class HolographicCard extends StatefulWidget {
     required this.cardImage,
     required this.backgroundImage,
     required this.foregroundImage,
-    required this.characterContourImage,
-    required this.characterBloomImage,
-    this.characterImage,
+    required this.foregroundContourImage,
+    required this.foregroundBloomImage,
     this.shaderAssetPath = 'shaders/holographic_card.frag',
-    this.depth = 0,
+    this.depth = 1,
     this.effectStrength = 1,
-    this.contourGlowStrength = 0.15,
-    this.viewSensitivity = 4,
-    this.maxTiltRadians = 0.28,
+    this.contourGlowStrength = 0.35,
+    this.idleEffectStrength = 0.22,
+    this.viewSensitivity = 3,
+    this.maxTiltRadians = 0.24,
     this.semanticLabel = 'Interactive holographic card',
     super.key,
   }) : assert(depth >= -3 && depth <= 3),
        assert(effectStrength >= 0 && effectStrength <= 1),
        assert(contourGlowStrength >= 0 && contourGlowStrength <= 3),
+       assert(idleEffectStrength >= 0 && idleEffectStrength <= 1),
        assert(viewSensitivity >= 1 && viewSensitivity <= 5),
        assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
 
   final ImageProvider cardImage;
   final ImageProvider backgroundImage;
   final ImageProvider foregroundImage;
-  final ImageProvider? characterImage;
-  final ImageProvider characterContourImage;
-  final ImageProvider characterBloomImage;
+  final ImageProvider foregroundContourImage;
+  final ImageProvider foregroundBloomImage;
   final String shaderAssetPath;
   final double depth;
   final double effectStrength;
   final double contourGlowStrength;
+  final double idleEffectStrength;
   final double viewSensitivity;
   final double maxTiltRadians;
   final String semanticLabel;
@@ -55,6 +56,8 @@ class _HolographicCardState extends State<HolographicCard>
   Offset _tilt = Offset.zero;
   Offset? _dragStartPosition;
   Offset? _dragStartTilt;
+  int? _activePointer;
+  bool _hovering = false;
   Animation<Offset>? _returnAnimation;
   double _effectActivation = 0;
   double _effectStartActivation = 0;
@@ -67,7 +70,7 @@ class _HolographicCardState extends State<HolographicCard>
     super.initState();
     _returnController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 240),
     )..addListener(_handleReturn);
     _effectController = AnimationController(
       vsync: this,
@@ -89,9 +92,8 @@ class _HolographicCardState extends State<HolographicCard>
     if (oldWidget.cardImage != widget.cardImage ||
         oldWidget.backgroundImage != widget.backgroundImage ||
         oldWidget.foregroundImage != widget.foregroundImage ||
-        oldWidget.characterImage != widget.characterImage ||
-        oldWidget.characterContourImage != widget.characterContourImage ||
-        oldWidget.characterBloomImage != widget.characterBloomImage ||
+        oldWidget.foregroundContourImage != widget.foregroundContourImage ||
+        oldWidget.foregroundBloomImage != widget.foregroundBloomImage ||
         oldWidget.shaderAssetPath != widget.shaderAssetPath) {
       _startLoading();
     }
@@ -141,12 +143,23 @@ class _HolographicCardState extends State<HolographicCard>
       final ui.Image cardMaskImage = await load(widget.cardImage);
       final ui.Image backgroundImage = await load(widget.backgroundImage);
       final ui.Image foregroundImage = await load(widget.foregroundImage);
-      final ImageProvider? characterProvider = widget.characterImage;
-      final ui.Image? characterImage = characterProvider == null
-          ? null
-          : await load(characterProvider);
-      final ui.Image contourImage = await load(widget.characterContourImage);
-      final ui.Image bloomImage = await load(widget.characterBloomImage);
+      final ui.Image contourImage = await load(widget.foregroundContourImage);
+      final ui.Image bloomImage = await load(widget.foregroundBloomImage);
+      final List<ui.Image> contractImages = [
+        backgroundImage,
+        foregroundImage,
+        contourImage,
+        bloomImage,
+      ];
+      if (contractImages.any(
+        (image) =>
+            image.width != cardMaskImage.width ||
+            image.height != cardMaskImage.height,
+      )) {
+        throw FlutterError(
+          'All holographic card images must use the same full canvas.',
+        );
+      }
       final ui.FragmentProgram program = await ui.FragmentProgram.fromAsset(
         widget.shaderAssetPath,
       );
@@ -154,7 +167,6 @@ class _HolographicCardState extends State<HolographicCard>
         cardMaskImage: cardMaskImage,
         backgroundImage: backgroundImage,
         foregroundImage: foregroundImage,
-        characterImage: characterImage,
         contourImage: contourImage,
         bloomImage: bloomImage,
         shader: program.fragmentShader(),
@@ -193,7 +205,7 @@ class _HolographicCardState extends State<HolographicCard>
   }
 
   void _updateHover(Offset localPosition, Size size) {
-    if (size.isEmpty) {
+    if (size.isEmpty || _activePointer != null) {
       return;
     }
     _returnController.stop();
@@ -207,18 +219,20 @@ class _HolographicCardState extends State<HolographicCard>
     }
   }
 
-  void _beginDrag(Offset localPosition, Size size) {
-    if (size.isEmpty) {
+  void _beginDrag(int pointer, Offset localPosition, Size size) {
+    if (size.isEmpty || _activePointer != null) {
       return;
     }
     _returnController.stop();
     _returnAnimation = null;
+    _activePointer = pointer;
     _dragStartPosition = localPosition;
     _dragStartTilt = _tilt;
+    _activateEffect();
   }
 
   void _updateDrag(Offset localPosition, Size size) {
-    if (size.isEmpty) {
+    if (size.isEmpty || _activePointer == null) {
       return;
     }
     final Offset startPosition = _dragStartPosition ?? localPosition;
@@ -234,10 +248,17 @@ class _HolographicCardState extends State<HolographicCard>
     }
   }
 
-  void _endDrag() {
+  void _endDrag(int pointer) {
+    if (_activePointer != pointer) {
+      return;
+    }
+    _activePointer = null;
     _dragStartPosition = null;
     _dragStartTilt = null;
     _resetTilt();
+    if (!_hovering) {
+      _deactivateEffect();
+    }
   }
 
   void _resetTilt() {
@@ -278,6 +299,11 @@ class _HolographicCardState extends State<HolographicCard>
     required Duration duration,
     required Curve curve,
   }) {
+    if (_effectTargetActivation == targetActivation &&
+        (_effectController.isAnimating ||
+            _effectActivation == targetActivation)) {
+      return;
+    }
     _effectController
       ..stop()
       ..duration = duration;
@@ -316,97 +342,134 @@ class _HolographicCardState extends State<HolographicCard>
         label: widget.semanticLabel,
         child: Image(
           image: widget.cardImage,
-          fit: BoxFit.fill,
+          fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
       );
     }
 
+    final double aspectRatio =
+        resources.cardMaskImage.width / resources.cardMaskImage.height;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final Size size = constraints.biggest;
-        final Matrix4 perspective = Matrix4.identity()
-          ..setEntry(3, 2, 0.0012)
-          ..rotateX(_tilt.dy * widget.maxTiltRadians)
-          ..rotateY(_tilt.dx * widget.maxTiltRadians);
-        final Offset shaderView = Offset(
-          (math.sin(_tilt.dx * widget.maxTiltRadians) *
-                  0.65 *
-                  widget.viewSensitivity)
-              .clamp(-0.5, 0.5)
-              .toDouble(),
-          (math.sin(_tilt.dy * widget.maxTiltRadians) *
-                  0.65 *
-                  widget.viewSensitivity)
-              .clamp(-0.5, 0.5)
-              .toDouble(),
+        final bool boundedWidth = constraints.hasBoundedWidth;
+        final bool boundedHeight = constraints.hasBoundedHeight;
+        if (boundedWidth && boundedHeight) {
+          final double maxWidth = constraints.maxWidth;
+          final double maxHeight = constraints.maxHeight;
+          final double width = math.min(maxWidth, maxHeight * aspectRatio);
+          final double height = width / aspectRatio;
+          return Align(
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: _buildCard(resources, Size(width, height)),
+            ),
+          );
+        }
+        if (boundedWidth) {
+          final double width = constraints.maxWidth;
+          final double height = width / aspectRatio;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: _buildCard(resources, Size(width, height)),
+          );
+        }
+        if (boundedHeight) {
+          final double height = constraints.maxHeight;
+          final double width = height * aspectRatio;
+          return SizedBox(
+            width: width,
+            height: height,
+            child: _buildCard(resources, Size(width, height)),
+          );
+        }
+        final double width = math.min(
+          320,
+          resources.cardMaskImage.width.toDouble(),
         );
+        final double height = width / aspectRatio;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: _buildCard(resources, Size(width, height)),
+        );
+      },
+    );
+  }
 
-        return Semantics(
-          image: true,
-          label: widget.semanticLabel,
-          child: MouseRegion(
-            onEnter: (_) => _activateEffect(),
-            onHover: (event) => _updateHover(event.localPosition, size),
-            onExit: (_) {
-              _resetTilt();
-              _deactivateEffect();
-            },
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: (event) {
-                _beginDrag(event.localPosition, size);
-                _activateEffect();
-              },
-              onPointerUp: (_) {
-                _endDrag();
-                _deactivateEffect();
-              },
-              onPointerCancel: (_) {
-                _endDrag();
-                _deactivateEffect();
-              },
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanUpdate: (details) =>
-                    _updateDrag(details.localPosition, size),
-                child: Transform(
-                  key: const ValueKey('holographic-card-transform'),
-                  alignment: Alignment.center,
-                  transform: perspective,
-                  child: RepaintBoundary(
-                    key: const ValueKey('holographic-card-renderer'),
-                    child: resources.hasCharacterLayer
-                        ? Stack(
-                            clipBehavior: Clip.none,
-                            fit: StackFit.expand,
-                            children: [
-                              Positioned(
-                                left: -size.width * 0.3,
-                                top: -size.height * 0.3,
-                                width: size.width * 1.6,
-                                height: size.height * 1.6,
-                                child: CustomPaint(
-                                  painter: _createPainter(
-                                    resources,
-                                    shaderView,
-                                  ),
-                                  child: const SizedBox.expand(),
-                                ),
-                              ),
-                            ],
-                          )
-                        : CustomPaint(
-                            painter: _createPainter(resources, shaderView),
-                            child: const SizedBox.expand(),
-                          ),
-                  ),
+  Widget _buildCard(_Resources resources, Size size) {
+    final Matrix4 perspective = Matrix4.identity()
+      ..setEntry(3, 2, 0.0012)
+      ..rotateX(_tilt.dy * widget.maxTiltRadians)
+      ..rotateY(_tilt.dx * widget.maxTiltRadians);
+    final Offset shaderView = Offset(
+      (math.sin(_tilt.dx * widget.maxTiltRadians) *
+              0.65 *
+              widget.viewSensitivity)
+          .clamp(-0.5, 0.5)
+          .toDouble(),
+      (math.sin(_tilt.dy * widget.maxTiltRadians) *
+              0.65 *
+              widget.viewSensitivity)
+          .clamp(-0.5, 0.5)
+          .toDouble(),
+    );
+
+    return Semantics(
+      image: true,
+      label: widget.semanticLabel,
+      child: MouseRegion(
+        onEnter: (_) {
+          _hovering = true;
+          _activateEffect();
+        },
+        onHover: (event) => _updateHover(event.localPosition, size),
+        onExit: (_) {
+          _hovering = false;
+          if (_activePointer == null) {
+            _resetTilt();
+            _deactivateEffect();
+          }
+        },
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (event) =>
+              _beginDrag(event.pointer, event.localPosition, size),
+          onPointerUp: (event) => _endDrag(event.pointer),
+          onPointerCancel: (event) => _endDrag(event.pointer),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: (details) => _updateDrag(details.localPosition, size),
+            child: Transform(
+              key: const ValueKey('holographic-card-transform'),
+              alignment: Alignment.center,
+              transform: perspective,
+              child: RepaintBoundary(
+                key: const ValueKey('holographic-card-renderer'),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: -size.width * 0.3,
+                      top: -size.height * 0.3,
+                      width: size.width * 1.6,
+                      height: size.height * 1.6,
+                      child: CustomPaint(
+                        painter: _createPainter(resources, shaderView),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -414,20 +477,20 @@ class _HolographicCardState extends State<HolographicCard>
     _Resources resources,
     Offset shaderView,
   ) {
+    final double activeStrength =
+        widget.effectStrength *
+        ui.lerpDouble(widget.idleEffectStrength, 1, _effectActivation)!;
     return HolographicCardPainter(
       shader: resources.shader,
       cardMaskImage: resources.cardMaskImage,
       backgroundImage: resources.backgroundImage,
       foregroundImage: resources.foregroundImage,
-      characterImage: resources.characterImage ?? resources.foregroundImage,
-      characterContourImage: resources.contourImage,
-      characterBloomImage: resources.bloomImage,
+      foregroundContourImage: resources.contourImage,
+      foregroundBloomImage: resources.bloomImage,
       view: shaderView,
       depth: widget.depth,
-      effectStrength: widget.effectStrength,
+      effectStrength: activeStrength,
       contourGlowStrength: widget.contourGlowStrength,
-      effectActivation: _effectActivation,
-      hasCharacterLayer: resources.hasCharacterLayer,
     );
   }
 }
@@ -437,7 +500,6 @@ class _Resources {
     required this.cardMaskImage,
     required this.backgroundImage,
     required this.foregroundImage,
-    required this.characterImage,
     required this.contourImage,
     required this.bloomImage,
     required this.shader,
@@ -446,18 +508,14 @@ class _Resources {
   final ui.Image cardMaskImage;
   final ui.Image backgroundImage;
   final ui.Image foregroundImage;
-  final ui.Image? characterImage;
   final ui.Image contourImage;
   final ui.Image bloomImage;
   final ui.FragmentShader shader;
-
-  bool get hasCharacterLayer => characterImage != null;
 
   void dispose() {
     cardMaskImage.dispose();
     backgroundImage.dispose();
     foregroundImage.dispose();
-    characterImage?.dispose();
     contourImage.dispose();
     bloomImage.dispose();
     shader.dispose();
