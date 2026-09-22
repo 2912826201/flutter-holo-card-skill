@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from asset_pipeline import digest, write_json
 from pathlib import Path
 
 import numpy as np
@@ -60,6 +62,7 @@ def has_usable_card_shape(alpha: Image.Image) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=("height", "medium", "low"), default="height")
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--width", type=int, default=1000)
@@ -67,7 +70,26 @@ def main() -> int:
     shape_group.add_argument("--card-mask", type=Path)
     shape_group.add_argument("--corner-radius-ratio", type=float)
     args = parser.parse_args()
+    write_json(
+        args.output.with_suffix(".json"),
+        {"kind": "normalized-source", "mode": args.mode, "status": "pending"},
+    )
 
+    try:
+        return normalize(args)
+    except Exception as error:
+        report = {
+            "kind": "normalized-source",
+            "mode": args.mode,
+            "status": "failed",
+            "error": str(error),
+        }
+        write_json(args.output.with_suffix(".json"), report)
+        print(json.dumps(report, ensure_ascii=False))
+        return 1
+
+
+def normalize(args):
     if args.width < 256:
         raise ValueError("Working width must be at least 256 pixels")
     if args.corner_radius_ratio is not None and not (
@@ -116,7 +138,21 @@ def main() -> int:
 
     normalized.putalpha(final_alpha)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    normalized.save(args.output)
+    temporary = args.output.with_name(args.output.name + ".tmp.png")
+    normalized.save(temporary)
+    os.replace(temporary, args.output)
+    write_json(
+        args.output.with_suffix(".json"),
+        {
+            "mode": args.mode,
+            "input_sha256": digest(args.source),
+            "output_sha256": digest(args.output),
+            "kind": "normalized-source",
+            "status": "pass",
+            "inputs": {str(args.source.resolve()): digest(args.source)},
+            "canvas": list(normalized.size),
+        },
+    )
     print(
         json.dumps(
             {

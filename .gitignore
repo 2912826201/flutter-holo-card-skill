@@ -4,5 +4,7 @@ __pycache__/
 .idea/
 .vscode/
 .dart_tool/
+.venv/
 build/
 coverage/
+examples/tianxiang_card/qa/v2/*/diagnostics/

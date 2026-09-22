@@ -6,41 +6,173 @@ import 'package:flutter/material.dart';
 
 import 'holographic_card_painter.dart';
 
+enum HolographicCardMode { height, medium, low }
+
+/// Pose uses x right and y up, each in [-1, 1]. Internal depth is independent
+/// of material sensitivity and optional physical rotation.
 class HolographicCard extends StatefulWidget {
   const HolographicCard({
     required this.cardImage,
     required this.backgroundImage,
     required this.foregroundImage,
+    this.depth = 1,
+    this.backgroundSourceRect = const Rect.fromLTWH(
+      8 / 116,
+      8 / 116,
+      100 / 116,
+      100 / 116,
+    ),
     required this.foregroundContourImage,
     required this.foregroundBloomImage,
-    this.shaderAssetPath = 'shaders/holographic_card.frag',
-    this.depth = 1,
-    this.effectStrength = 1,
+    this.foilImage = const AssetImage(
+      'assets/holographic_foil.png',
+      package: 'build_flutter_holo_card_template',
+    ),
+    this.shaderAssetPath,
+    this.effectStrength = 0.65,
+    this.foilStrength = 1,
     this.contourGlowStrength = 0.35,
     this.idleEffectStrength = 0.22,
-    this.viewSensitivity = 3,
+    this.viewSensitivity = 1,
     this.maxTiltRadians = 0.24,
+    this.applyPhysicalTilt = true,
+    this.autoPlay = false,
+    this.controlledTilt,
+    this.controlledActivation,
+    this.onError,
     this.semanticLabel = 'Interactive holographic card',
     super.key,
-  }) : assert(depth >= -3 && depth <= 3),
+  }) : mode = HolographicCardMode.height,
+       assert(
+         depth >= 0 && depth <= 3,
+         'Negative depth is no longer supported; migrate to background distance 0–3.',
+       ),
        assert(effectStrength >= 0 && effectStrength <= 1),
-       assert(contourGlowStrength >= 0 && contourGlowStrength <= 3),
-       assert(idleEffectStrength >= 0 && idleEffectStrength <= 1),
-       assert(viewSensitivity >= 1 && viewSensitivity <= 5),
+       assert(foilStrength >= 0 && foilStrength <= 1),
+       assert(contourGlowStrength >= 0 && contourGlowStrength <= 1),
        assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
 
+  const HolographicCard.height({
+    required this.cardImage,
+    required this.backgroundImage,
+    required this.foregroundImage,
+    this.depth = 1,
+    this.backgroundSourceRect = const Rect.fromLTWH(
+      8 / 116,
+      8 / 116,
+      100 / 116,
+      100 / 116,
+    ),
+    required this.foregroundContourImage,
+    required this.foregroundBloomImage,
+    this.foilImage = const AssetImage(
+      'assets/holographic_foil.png',
+      package: 'build_flutter_holo_card_template',
+    ),
+    this.shaderAssetPath,
+    this.effectStrength = 0.65,
+    this.foilStrength = 1,
+    this.contourGlowStrength = 0.35,
+    this.idleEffectStrength = 0.22,
+    this.viewSensitivity = 1,
+    this.maxTiltRadians = 0.24,
+    this.applyPhysicalTilt = true,
+    this.autoPlay = false,
+    this.controlledTilt,
+    this.controlledActivation,
+    this.onError,
+    this.semanticLabel = 'Interactive holographic card',
+    super.key,
+  }) : mode = HolographicCardMode.height,
+       assert(
+         depth >= 0 && depth <= 3,
+         'Negative depth is no longer supported; migrate to background distance 0–3.',
+       ),
+       assert(effectStrength >= 0 && effectStrength <= 1),
+       assert(foilStrength >= 0 && foilStrength <= 1),
+       assert(contourGlowStrength >= 0 && contourGlowStrength <= 1),
+       assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
+
+  const HolographicCard.medium({
+    required this.cardImage,
+    required this.foregroundContourImage,
+    required this.foregroundBloomImage,
+    this.foilImage = const AssetImage(
+      'assets/holographic_foil.png',
+      package: 'build_flutter_holo_card_template',
+    ),
+    this.shaderAssetPath,
+    this.effectStrength = 0.65,
+    this.foilStrength = 1,
+    this.contourGlowStrength = 0.35,
+    this.idleEffectStrength = 0.22,
+    this.viewSensitivity = 1,
+    this.maxTiltRadians = 0.24,
+    this.applyPhysicalTilt = true,
+    this.autoPlay = false,
+    this.controlledTilt,
+    this.controlledActivation,
+    this.onError,
+    this.semanticLabel = 'Interactive holographic card',
+    super.key,
+  }) : mode = HolographicCardMode.medium,
+       backgroundImage = null,
+       foregroundImage = null,
+       depth = 0,
+       backgroundSourceRect = const Rect.fromLTWH(0, 0, 1, 1),
+       assert(effectStrength >= 0 && effectStrength <= 1),
+       assert(foilStrength >= 0 && foilStrength <= 1),
+       assert(contourGlowStrength >= 0 && contourGlowStrength <= 1),
+       assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
+
+  const HolographicCard.low({
+    required this.cardImage,
+    this.foilImage = const AssetImage(
+      'assets/holographic_foil.png',
+      package: 'build_flutter_holo_card_template',
+    ),
+    this.shaderAssetPath,
+    this.effectStrength = 0.65,
+    this.foilStrength = 1,
+    this.contourGlowStrength = 0.35,
+    this.idleEffectStrength = 0.22,
+    this.viewSensitivity = 1,
+    this.maxTiltRadians = 0.24,
+    this.applyPhysicalTilt = true,
+    this.autoPlay = false,
+    this.controlledTilt,
+    this.controlledActivation,
+    this.onError,
+    this.semanticLabel = 'Interactive holographic card',
+    super.key,
+  }) : mode = HolographicCardMode.low,
+       backgroundImage = null,
+       foregroundImage = null,
+       depth = 0,
+       backgroundSourceRect = const Rect.fromLTWH(0, 0, 1, 1),
+       foregroundContourImage = null,
+       foregroundBloomImage = null,
+       assert(effectStrength >= 0 && effectStrength <= 1),
+       assert(foilStrength >= 0 && foilStrength <= 1),
+       assert(contourGlowStrength >= 0 && contourGlowStrength <= 1),
+       assert(maxTiltRadians >= 0 && maxTiltRadians <= 0.35);
+
+  final HolographicCardMode mode;
   final ImageProvider cardImage;
-  final ImageProvider backgroundImage;
-  final ImageProvider foregroundImage;
-  final ImageProvider foregroundContourImage;
-  final ImageProvider foregroundBloomImage;
-  final String shaderAssetPath;
-  final double depth;
-  final double effectStrength;
-  final double contourGlowStrength;
-  final double idleEffectStrength;
-  final double viewSensitivity;
-  final double maxTiltRadians;
+  final ImageProvider foilImage;
+  final ImageProvider? backgroundImage, foregroundImage;
+  final ImageProvider? foregroundContourImage, foregroundBloomImage;
+  final String? shaderAssetPath;
+  final Rect backgroundSourceRect;
+
+  /// Foil-only intensity. Zero keeps contour light; effectStrength zero disables both.
+  final double foilStrength;
+  final double depth, effectStrength, contourGlowStrength, idleEffectStrength;
+  final double viewSensitivity, maxTiltRadians;
+  final bool applyPhysicalTilt, autoPlay;
+  final Offset? controlledTilt;
+  final double? controlledActivation;
+  final void Function(Object error, StackTrace stack)? onError;
   final String semanticLabel;
 
   @override
@@ -48,11 +180,15 @@ class HolographicCard extends StatefulWidget {
 }
 
 class _HolographicCardState extends State<HolographicCard>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _returnController;
+  late final AnimationController _autoController;
+  bool _foreground = true;
   late final AnimationController _effectController;
 
   _Resources? _resources;
+  final Set<void Function()> _cancelLoads = {};
+  bool get _reduceMotion => MediaQuery.disableAnimationsOf(context);
   Offset _tilt = Offset.zero;
   Offset? _dragStartPosition;
   Offset? _dragStartTilt;
@@ -68,10 +204,21 @@ class _HolographicCardState extends State<HolographicCard>
   @override
   void initState() {
     super.initState();
-    _returnController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 240),
-    )..addListener(_handleReturn);
+    WidgetsBinding.instance.addObserver(this);
+    _autoController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 8))
+          ..addListener(() {
+            if (mounted) setState(() {});
+          });
+    _returnController =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 240),
+          )
+          ..addListener(_handleReturn)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed && mounted) _syncAutoPlay();
+          });
     _effectController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 180),
@@ -81,6 +228,7 @@ class _HolographicCardState extends State<HolographicCard>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncAutoPlay();
     if (_loadGeneration == 0) {
       _startLoading();
     }
@@ -89,7 +237,11 @@ class _HolographicCardState extends State<HolographicCard>
   @override
   void didUpdateWidget(HolographicCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cardImage != widget.cardImage ||
+    _syncAutoPlay();
+    if (oldWidget.backgroundSourceRect != widget.backgroundSourceRect ||
+        oldWidget.mode != widget.mode ||
+        oldWidget.foilImage != widget.foilImage ||
+        oldWidget.cardImage != widget.cardImage ||
         oldWidget.backgroundImage != widget.backgroundImage ||
         oldWidget.foregroundImage != widget.foregroundImage ||
         oldWidget.foregroundContourImage != widget.foregroundContourImage ||
@@ -99,8 +251,48 @@ class _HolographicCardState extends State<HolographicCard>
     }
   }
 
+  void _syncAutoPlay() {
+    final active =
+        widget.autoPlay &&
+        widget.controlledTilt == null &&
+        !_hovering &&
+        _activePointer == null &&
+        !_returnController.isAnimating &&
+        !_reduceMotion &&
+        _foreground &&
+        TickerMode.valuesOf(context).enabled;
+    if (active) {
+      if (!_autoController.isAnimating) _autoController.repeat();
+    } else {
+      _autoController.stop();
+    }
+    if (_reduceMotion || !_foreground) {
+      _returnController.stop();
+      _effectController.stop();
+      _tilt = Offset.zero;
+      _effectActivation = 0;
+      _returnAnimation = null;
+      if (!_foreground) {
+        _activePointer = null;
+        _hovering = false;
+        _dragStartPosition = null;
+        _dragStartTilt = null;
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _syncAutoPlay();
+    if (mounted) setState(() {});
+  }
+
   void _startLoading() {
     final int generation = ++_loadGeneration;
+    for (final cancel in _cancelLoads.toList()) {
+      cancel();
+    }
     _resources?.dispose();
     _resources = null;
     final ImageConfiguration configuration = createLocalImageConfiguration(
@@ -119,6 +311,10 @@ class _HolographicCardState extends State<HolographicCard>
           if (!mounted || generation != _loadGeneration) {
             return;
           }
+          if (widget.onError != null) {
+            widget.onError!(error, stackTrace);
+            return;
+          }
           FlutterError.reportError(
             FlutterErrorDetails(
               exception: error,
@@ -132,45 +328,63 @@ class _HolographicCardState extends State<HolographicCard>
   }
 
   Future<_Resources> _loadResources(ImageConfiguration configuration) async {
+    final config = widget;
+    final generation = _loadGeneration;
     final List<ui.Image> loadedImages = [];
     try {
       Future<ui.Image> load(ImageProvider provider) async {
         final ui.Image image = await _loadImage(provider, configuration);
         loadedImages.add(image);
+        if (!mounted || generation != _loadGeneration)
+          throw StateError('Superseded load');
         return image;
       }
 
-      final ui.Image cardMaskImage = await load(widget.cardImage);
-      final ui.Image backgroundImage = await load(widget.backgroundImage);
-      final ui.Image foregroundImage = await load(widget.foregroundImage);
-      final ui.Image contourImage = await load(widget.foregroundContourImage);
-      final ui.Image bloomImage = await load(widget.foregroundBloomImage);
-      final List<ui.Image> contractImages = [
-        backgroundImage,
-        foregroundImage,
-        contourImage,
-        bloomImage,
-      ];
-      if (contractImages.any(
-        (image) =>
-            image.width != cardMaskImage.width ||
-            image.height != cardMaskImage.height,
-      )) {
-        throw FlutterError(
-          'All holographic card images must use the same full canvas.',
+      final ui.Image cardMaskImage = await load(config.cardImage);
+      if (config.depth < 0 || config.depth > 3) {
+        throw ArgumentError(
+          'Migrate depth to background distance 0–3; negative depth was removed.',
         );
       }
-      final ui.FragmentProgram program = await ui.FragmentProgram.fromAsset(
-        widget.shaderAssetPath,
+      final foil = await load(config.foilImage);
+      final images = <ui.Image>[cardMaskImage, foil];
+      if (config.mode != HolographicCardMode.low) {
+        images.add(await load(config.foregroundContourImage!));
+        images.add(await load(config.foregroundBloomImage!));
+      }
+      if (config.mode == HolographicCardMode.height) {
+        images.add(await load(config.backgroundImage!));
+        images.add(await load(config.foregroundImage!));
+        final rect = config.backgroundSourceRect;
+        final bg = images[4];
+        if ((rect.width * bg.width - cardMaskImage.width).abs() > 1.5 ||
+            (rect.height * bg.height - cardMaskImage.height).abs() > 1.5 ||
+            rect.left < 0.06 ||
+            rect.top < 0.06 ||
+            rect.right > 0.94 ||
+            rect.bottom > 0.94) {
+          throw ArgumentError(
+            'height requires an extended background and its source rectangle (8% per side).',
+          );
+        }
+      }
+      for (var i = 2; i < images.length; i++) {
+        if (i == 4) continue;
+        if (images[i].width != cardMaskImage.width ||
+            images[i].height != cardMaskImage.height) {
+          throw ArgumentError(
+            'Card, foreground, contour and bloom must share the exact source canvas.',
+          );
+        }
+      }
+      final name = config.mode == HolographicCardMode.height
+          ? 'holographic_card'
+          : config.mode.name;
+      final program = await ui.FragmentProgram.fromAsset(
+        config.shaderAssetPath ??
+            'packages/build_flutter_holo_card_template/shaders/$name.frag',
       );
-      return _Resources(
-        cardMaskImage: cardMaskImage,
-        backgroundImage: backgroundImage,
-        foregroundImage: foregroundImage,
-        contourImage: contourImage,
-        bloomImage: bloomImage,
-        shader: program.fragmentShader(),
-      );
+      return _Resources(images, program.fragmentShader());
     } catch (_) {
       for (final ui.Image image in loadedImages) {
         image.dispose();
@@ -186,20 +400,29 @@ class _HolographicCardState extends State<HolographicCard>
     final Completer<ui.Image> completer = Completer<ui.Image>();
     final ImageStream stream = provider.resolve(configuration);
     late final ImageStreamListener listener;
+    late final void Function() cancel;
+    cancel = () {
+      stream.removeListener(listener);
+      _cancelLoads.remove(cancel);
+      if (!completer.isCompleted)
+        completer.completeError(
+          StateError('Image load superseded or disposed'),
+        );
+    };
     listener = ImageStreamListener(
       (ImageInfo info, bool synchronousCall) {
         stream.removeListener(listener);
-        if (!completer.isCompleted) {
-          completer.complete(info.image);
-        }
+        _cancelLoads.remove(cancel);
+        if (!completer.isCompleted) completer.complete(info.image.clone());
+        info.dispose();
       },
       onError: (Object error, StackTrace? stackTrace) {
         stream.removeListener(listener);
-        if (!completer.isCompleted) {
-          completer.completeError(error, stackTrace);
-        }
+        _cancelLoads.remove(cancel);
+        if (!completer.isCompleted) completer.completeError(error, stackTrace);
       },
     );
+    _cancelLoads.add(cancel);
     stream.addListener(listener);
     return completer.future;
   }
@@ -219,10 +442,22 @@ class _HolographicCardState extends State<HolographicCard>
     }
   }
 
+  void _stopAutoForInteraction() {
+    if (_autoController.isAnimating) {
+      if (_tilt.distance < .001) {
+        final phase = _autoController.value * math.pi * 2;
+        _tilt = Offset(math.sin(phase) * .55, math.sin(phase * 2) * .35);
+      }
+      _autoController.stop();
+      _autoController.value = 0;
+    }
+  }
+
   void _beginDrag(int pointer, Offset localPosition, Size size) {
     if (size.isEmpty || _activePointer != null) {
       return;
     }
+    _stopAutoForInteraction();
     _returnController.stop();
     _returnAnimation = null;
     _activePointer = pointer;
@@ -259,9 +494,14 @@ class _HolographicCardState extends State<HolographicCard>
     if (!_hovering) {
       _deactivateEffect();
     }
+    _syncAutoPlay();
   }
 
   void _resetTilt() {
+    if (_reduceMotion) {
+      setState(() => _tilt = Offset.zero);
+      return;
+    }
     if (_tilt == Offset.zero) {
       return;
     }
@@ -299,6 +539,10 @@ class _HolographicCardState extends State<HolographicCard>
     required Duration duration,
     required Curve curve,
   }) {
+    if (_reduceMotion) {
+      setState(() => _effectActivation = targetActivation);
+      return;
+    }
     if (_effectTargetActivation == targetActivation &&
         (_effectController.isAnimating ||
             _effectActivation == targetActivation)) {
@@ -327,7 +571,12 @@ class _HolographicCardState extends State<HolographicCard>
   @override
   void dispose() {
     _loadGeneration++;
+    for (final cancel in _cancelLoads.toList()) {
+      cancel();
+    }
     _resources?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _autoController.dispose();
     _returnController.dispose();
     _effectController.dispose();
     super.dispose();
@@ -335,6 +584,18 @@ class _HolographicCardState extends State<HolographicCard>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.depth.isFinite || widget.depth < 0 || widget.depth > 3) {
+      throw ArgumentError(
+        'Negative depth removed: migrate to background distance 0–3.',
+      );
+    }
+    if (!widget.maxTiltRadians.isFinite ||
+        widget.maxTiltRadians < 0 ||
+        widget.maxTiltRadians > .35) {
+      throw ArgumentError(
+        'maxTiltRadians must be between 0 and 0.35 for overscan safety.',
+      );
+    }
     final _Resources? resources = _resources;
     if (resources == null) {
       return Semantics(
@@ -401,22 +662,26 @@ class _HolographicCardState extends State<HolographicCard>
   }
 
   Widget _buildCard(_Resources resources, Size size) {
-    final Matrix4 perspective = Matrix4.identity()
-      ..setEntry(3, 2, 0.0012)
-      ..rotateX(_tilt.dy * widget.maxTiltRadians)
-      ..rotateY(_tilt.dx * widget.maxTiltRadians);
-    final Offset shaderView = Offset(
-      (math.sin(_tilt.dx * widget.maxTiltRadians) *
-              0.65 *
-              widget.viewSensitivity)
-          .clamp(-0.5, 0.5)
-          .toDouble(),
-      (math.sin(_tilt.dy * widget.maxTiltRadians) *
-              0.65 *
-              widget.viewSensitivity)
-          .clamp(-0.5, 0.5)
-          .toDouble(),
+    final phase = _autoController.value * math.pi * 2;
+    final automatic =
+        widget.autoPlay &&
+        !_reduceMotion &&
+        !_hovering &&
+        _activePointer == null &&
+        _tilt.distance < .001;
+    final autoPose = Offset(math.sin(phase) * .55, math.sin(phase * 2) * .35);
+    final rawPose = widget.controlledTilt ?? (automatic ? autoPose : _tilt);
+    final pose = Offset(
+      rawPose.dx.clamp(-1.0, 1.0),
+      rawPose.dy.clamp(-1.0, 1.0),
     );
+    final physical = widget.applyPhysicalTilt && !_reduceMotion;
+    final perspective = Matrix4.identity()
+      ..setEntry(3, 2, -1 / (size.width * 2));
+    if (physical) {
+      perspective.rotateX(pose.dy * widget.maxTiltRadians);
+      perspective.rotateY(pose.dx * widget.maxTiltRadians);
+    }
 
     return Semantics(
       image: true,
@@ -424,6 +689,7 @@ class _HolographicCardState extends State<HolographicCard>
       child: MouseRegion(
         onEnter: (_) {
           _hovering = true;
+          _stopAutoForInteraction();
           _activateEffect();
         },
         onHover: (event) => _updateHover(event.localPosition, size),
@@ -433,6 +699,7 @@ class _HolographicCardState extends State<HolographicCard>
             _resetTilt();
             _deactivateEffect();
           }
+          _syncAutoPlay();
         },
         child: Listener(
           behavior: HitTestBehavior.opaque,
@@ -449,21 +716,9 @@ class _HolographicCardState extends State<HolographicCard>
               transform: perspective,
               child: RepaintBoundary(
                 key: const ValueKey('holographic-card-renderer'),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      left: -size.width * 0.3,
-                      top: -size.height * 0.3,
-                      width: size.width * 1.6,
-                      height: size.height * 1.6,
-                      child: CustomPaint(
-                        painter: _createPainter(resources, shaderView),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  ],
+                child: CustomPaint(
+                  painter: _createPainter(resources, pose),
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
@@ -477,47 +732,37 @@ class _HolographicCardState extends State<HolographicCard>
     _Resources resources,
     Offset shaderView,
   ) {
-    final double activeStrength =
-        widget.effectStrength *
-        ui.lerpDouble(widget.idleEffectStrength, 1, _effectActivation)!;
+    final activation = (widget.controlledActivation ?? _effectActivation).clamp(
+      0.0,
+      1.0,
+    );
     return HolographicCardPainter(
       shader: resources.shader,
-      cardMaskImage: resources.cardMaskImage,
-      backgroundImage: resources.backgroundImage,
-      foregroundImage: resources.foregroundImage,
-      foregroundContourImage: resources.contourImage,
-      foregroundBloomImage: resources.bloomImage,
+      images: resources.images,
+      mode: widget.mode.name,
       view: shaderView,
-      depth: widget.depth,
-      effectStrength: activeStrength,
+      maxTiltRadians: widget.maxTiltRadians,
+      viewSensitivity: widget.viewSensitivity,
+      depth: _reduceMotion ? 0 : widget.depth,
+      sourceRect: widget.backgroundSourceRect,
+      effectStrength:
+          widget.effectStrength *
+          ui.lerpDouble(widget.idleEffectStrength, 1, activation)!,
       contourGlowStrength: widget.contourGlowStrength,
+      foilStrength: widget.foilStrength,
     );
   }
 }
 
 class _Resources {
-  const _Resources({
-    required this.cardMaskImage,
-    required this.backgroundImage,
-    required this.foregroundImage,
-    required this.contourImage,
-    required this.bloomImage,
-    required this.shader,
-  });
-
-  final ui.Image cardMaskImage;
-  final ui.Image backgroundImage;
-  final ui.Image foregroundImage;
-  final ui.Image contourImage;
-  final ui.Image bloomImage;
+  _Resources(this.images, this.shader);
+  final List<ui.Image> images;
+  ui.Image get cardMaskImage => images.first;
   final ui.FragmentShader shader;
-
   void dispose() {
-    cardMaskImage.dispose();
-    backgroundImage.dispose();
-    foregroundImage.dispose();
-    contourImage.dispose();
-    bloomImage.dispose();
+    for (final image in images) {
+      image.dispose();
+    }
     shader.dispose();
   }
 }

@@ -1,80 +1,8 @@
 #!/usr/bin/env python3
-"""Remove known two-layer holo-card intermediates after final review."""
-
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-
-
-FINAL_FILES = {
-    "source.png",
-    "background.png",
-    "foreground.png",
-    "foreground_contour.png",
-    "foreground_bloom.png",
-}
-
-TEMPORARY_FILES = {
-    "alignment-overlay.png",
-    "background-generated.png",
-    "card-shape-mask.png",
-    "check-report.json",
-    "foreground-alpha-mask.png",
-    "foreground-alpha.png",
-    "foreground-on-black.png",
-    "foreground-on-white.png",
-    "foreground-alignment-overlay.png",
-    "foreground-report.json",
-    "structure-lineart-generated-raw.png",
-    "structure-generated.png",
-    "structure-generated-transparent.png",
-    "structure-generated-report.json",
-}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", required=True, type=Path)
-    args = parser.parse_args()
-
-    output_dir = args.output_dir.resolve(strict=True)
-    if not output_dir.is_dir():
-        raise ValueError("Output path is not a directory")
-
-    missing = sorted(
-        name for name in FINAL_FILES if not (output_dir / name).is_file()
-    )
-    if missing:
-        raise ValueError(
-            f"Refusing cleanup because final runtime files are missing: {missing}"
-        )
-
-    removed: list[str] = []
-    for name in sorted(TEMPORARY_FILES):
-        candidate = (output_dir / name).resolve(strict=False)
-        if candidate.parent != output_dir:
-            raise ValueError(f"Refusing path outside output directory: {candidate}")
-        if candidate.is_dir():
-            raise ValueError(f"Refusing to remove directory: {candidate}")
-        if candidate.is_file():
-            candidate.unlink()
-            removed.append(name)
-
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "output_dir": str(output_dir),
-                "kept": sorted(FINAL_FILES),
-                "removed": removed,
-            },
-            indent=2,
-        )
-    )
-    return 0
-
+"""Compatibility command for the v2 manifest-based cleanup."""
+import sys
+from asset_pipeline import main
 
 if __name__ == "__main__":
+    sys.argv.insert(1, "cleanup")
     raise SystemExit(main())

@@ -1,200 +1,412 @@
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import '../lib/holographic_card.dart';
 import '../lib/holographic_card_painter.dart';
 
+MemoryImage asset(String name) =>
+    MemoryImage(File('test/fixtures/$name.png').readAsBytesSync());
+HolographicCard card(
+  String mode, {
+  double power = 1,
+  Offset? pose,
+  bool physical = true,
+  double depth = 1,
+  ImageProvider? source,
+  void Function(Object, StackTrace)? onError,
+}) {
+  final image = source ?? asset('source');
+  final foil = asset('foil');
+  if (mode == 'low')
+    return HolographicCard.low(
+      cardImage: image,
+      foilImage: foil,
+      shaderAssetPath: 'shaders/low.frag',
+      effectStrength: power,
+      controlledTilt: pose,
+      applyPhysicalTilt: physical,
+      onError: onError,
+    );
+  if (mode == 'medium')
+    return HolographicCard.medium(
+      cardImage: image,
+      foilImage: foil,
+      foregroundContourImage: asset('contour'),
+      foregroundBloomImage: asset('bloom'),
+      shaderAssetPath: 'shaders/medium.frag',
+      effectStrength: power,
+      controlledTilt: pose,
+      applyPhysicalTilt: physical,
+      onError: onError,
+    );
+  return HolographicCard.height(
+    cardImage: image,
+    foilImage: foil,
+    foregroundContourImage: asset('contour'),
+    foregroundBloomImage: asset('bloom'),
+    backgroundImage: asset('background'),
+    foregroundImage: asset('foreground'),
+    backgroundSourceRect: const Rect.fromLTWH(
+      8 / 116,
+      12 / 164,
+      100 / 116,
+      140 / 164,
+    ),
+    shaderAssetPath: 'shaders/holographic_card.frag',
+    depth: depth,
+    effectStrength: power,
+    controlledTilt: pose,
+    applyPhysicalTilt: physical,
+    onError: onError,
+  );
+}
+
+Future<void> mount(WidgetTester tester, Widget child) => tester.pumpWidget(
+  MaterialApp(
+    home: Scaffold(
+      body: Center(child: SizedBox(width: 200, height: 280, child: child)),
+    ),
+  ),
+);
+Finder get renderer => find.byKey(const ValueKey('holographic-card-renderer'));
+Future<void> ready(WidgetTester tester, {int count = 1}) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pump();
+    if (renderer.evaluate().length == count) break;
+  }
+  expect(renderer, findsNWidgets(count));
+}
+
+HolographicCardPainter painter(WidgetTester tester) =>
+    tester
+            .widget<CustomPaint>(
+              find.descendant(
+                of: renderer.first,
+                matching: find.byType(CustomPaint),
+              ),
+            )
+            .painter!
+        as HolographicCardPainter;
+Future<List<int>> pixels(WidgetTester tester, Finder finder) async {
+  final boundary = tester.renderObject<RenderRepaintBoundary>(finder);
+  final image = await boundary.toImage();
+  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  image.dispose();
+  return data!.buffer.asUint8List().toList();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  testWidgets('loads five images with visible two-layer defaults', (
-    WidgetTester tester,
-  ) async {
-    final MemoryImage image = MemoryImage(_whitePng());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(width: 250, height: 350, child: _card(image)),
-          ),
-        ),
-      ),
+  test('background projection neutral, depth zero and overscan safety', () {
+    for (final aspect in [0.2, 0.715, 1.0, 2.0, 5.0]) {
+      for (final uv in [
+        Offset.zero,
+        const Offset(1, 0),
+        const Offset(0, 1),
+        const Offset(1, 1),
+      ]) {
+        expect(
+          (projectBackgroundUv(uv, aspect, Offset.zero, .35, 3) - uv).distance,
+          lessThan(1e-10),
+        );
+        for (final x in [-1.0, 0.0, 1.0]) {
+          for (final y in [-1.0, 0.0, 1.0]) {
+            for (final depth in [0.0, 1.0, 3.0]) {
+              final result = projectBackgroundUv(
+                uv,
+                aspect,
+                Offset(x, y),
+                .35,
+                depth,
+              );
+              expect(result.dx, inInclusiveRange(-.08, 1.08));
+              expect(result.dy, inInclusiveRange(-.08, 1.08));
+              if (depth == 0) expect((result - uv).distance, lessThan(1e-10));
+            }
+          }
+        }
+      }
+    }
+    expect(
+      projectBackgroundUv(
+        const Offset(.5, .5),
+        .715,
+        const Offset(1, 0),
+        .24,
+        1,
+      ).dx,
+      greaterThan(.5),
     );
-    final Finder renderer = await _waitForRenderer(tester);
-    final HolographicCard widget = tester.widget(find.byType(HolographicCard));
-    final HolographicCardPainter painter = _painter(tester, renderer);
-
-    expect(widget.depth, 1);
-    expect(widget.viewSensitivity, 3);
-    expect(widget.maxTiltRadians, 0.24);
-    expect(widget.idleEffectStrength, 0.22);
-    expect(painter.effectStrength, closeTo(0.22, 0.001));
-    expect(painter.cardMaskImage.width, 2);
-    expect(tester.getSize(renderer), const Size(250, 250));
-
-    final String shaderSource = File(
-      'shaders/holographic_card.frag',
-    ).readAsStringSync();
-    expect(shaderSource, contains('uniform sampler2D uForeground;'));
-    expect(shaderSource, contains('float broadPrism'));
-    expect(shaderSource, contains('vec3 highlightColor'));
-    expect(shaderSource, isNot(contains('uCharacter')));
-    expect(shaderSource, isNot(contains('uLayeredCharacter')));
-    expect(tester.takeException(), isNull);
   });
-
-  testWidgets('uses a centered 160 percent painter surface', (
-    WidgetTester tester,
-  ) async {
-    final MemoryImage image = MemoryImage(_whitePng());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(width: 200, height: 280, child: _card(image)),
-        ),
-      ),
-    );
-    final Finder renderer = await _waitForRenderer(tester);
-    final Positioned surface = tester.widget<Positioned>(
-      find.descendant(of: renderer, matching: find.byType(Positioned)),
-    );
-
-    expect(tester.getSize(renderer), const Size(200, 200));
-    expect(surface.left, -60);
-    expect(surface.top, -60);
-    expect(surface.width, 320);
-    expect(surface.height, 320);
-  });
-
-  testWidgets('drag preserves zero pitch until vertical movement and returns', (
-    WidgetTester tester,
-  ) async {
-    final MemoryImage image = MemoryImage(_whitePng());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(width: 240, height: 240, child: _card(image)),
-          ),
-        ),
-      ),
-    );
-    final Finder renderer = await _waitForRenderer(tester);
-    final Rect rect = tester.getRect(renderer);
-    final TestGesture gesture = await tester.startGesture(
-      Offset(rect.center.dx, rect.top + rect.height * 0.8),
-    );
-    await gesture.moveBy(const Offset(30, 0));
-    await tester.pump();
-    expect(_painter(tester, renderer).view.dy, 0);
-
-    await gesture.moveBy(const Offset(0, -45));
-    await tester.pump(const Duration(milliseconds: 200));
-    final HolographicCardPainter active = _painter(tester, renderer);
-    expect(active.view.dy, greaterThan(0));
-    expect(active.effectStrength, greaterThan(0.22));
-
-    await gesture.up();
-    await tester.pump();
-    expect(_painter(tester, renderer).view, isNot(Offset.zero));
-    await tester.pumpAndSettle();
-    final HolographicCardPainter settled = _painter(tester, renderer);
-    expect(settled.view, Offset.zero);
-    expect(settled.effectStrength, closeTo(0.22, 0.001));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('effect strength zero remains zero during interaction', (
-    WidgetTester tester,
-  ) async {
-    final MemoryImage image = MemoryImage(_whitePng());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 200,
-            height: 200,
-            child: _card(image, effectStrength: 0),
-          ),
-        ),
-      ),
-    );
-    final Finder renderer = await _waitForRenderer(tester);
-    final TestGesture gesture = await tester.startGesture(
-      tester.getCenter(renderer),
-    );
-    await gesture.moveBy(const Offset(25, -25));
-    await tester.pump(const Duration(milliseconds: 220));
-    expect(_painter(tester, renderer).effectStrength, 0);
-    await gesture.up();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('derives height under a width-only constraint', (
-    WidgetTester tester,
-  ) async {
-    final MemoryImage image = MemoryImage(_whitePng());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 180,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [_card(image)],
+  for (final mode in ['height', 'medium', 'low']) {
+    testWidgets('$mode loads only required images on the exact card canvas', (
+      tester,
+    ) async {
+      await mount(tester, card(mode));
+      await ready(tester);
+      expect(
+        painter(tester).images.length,
+        mode == 'height'
+            ? 6
+            : mode == 'medium'
+            ? 4
+            : 2,
+      );
+      expect(tester.getSize(renderer), const Size(200, 280));
+      expect(
+        find.descendant(of: renderer, matching: find.byType(Positioned)),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+      await mount(tester, const SizedBox());
+    });
+  }
+  for (final mode in ['height', 'medium', 'low']) {
+    testWidgets(
+      '$mode power zero matches original and stays fixed at any pose',
+      (tester) async {
+        await mount(
+          tester,
+          card(mode, power: 0, pose: const Offset(1, -1), physical: false),
+        );
+        await ready(tester);
+        final rendered = (await tester.runAsync(
+          () => pixels(tester, renderer),
+        ))!;
+        await mount(
+          tester,
+          RepaintBoundary(
+            key: const ValueKey('original'),
+            child: Image(
+              image: asset('source'),
+              fit: BoxFit.fill,
+              filterQuality: FilterQuality.medium,
             ),
           ),
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump();
+        final original = (await tester.runAsync(
+          () => pixels(tester, find.byKey(const ValueKey('original'))),
+        ))!;
+        expect(rendered.length, original.length);
+        var maxError = 0;
+        for (var i = 0; i < rendered.length; i++) {
+          final error = (rendered[i] - original[i]).abs();
+          if (error > maxError) maxError = error;
+        }
+        expect(maxError, lessThanOrEqualTo(1));
+      },
+    );
+  }
+  testWidgets(
+    'low matches unmodified reference shader at equal pose and power',
+    (tester) async {
+      for (final pose in [
+        Offset.zero,
+        const Offset(-1, 1),
+        const Offset(1, -1),
+      ]) {
+        await mount(tester, card('low', pose: pose, physical: false));
+        await ready(tester);
+        final actual = (await tester.runAsync(() => pixels(tester, renderer)))!;
+        await mount(
+          tester,
+          HolographicCard.low(
+            cardImage: asset('source'),
+            foilImage: asset('foil'),
+            shaderAssetPath: 'test/fixtures/reference_foil.frag',
+            effectStrength: 1,
+            controlledTilt: pose,
+            applyPhysicalTilt: false,
+          ),
+        );
+        await ready(tester);
+        final reference = (await tester.runAsync(
+          () => pixels(tester, renderer),
+        ))!;
+        expect(actual, reference);
+      }
+    },
+  );
+  testWidgets(
+    'height foreground and Alpha stay anchored through all depth/pose extremes',
+    (tester) async {
+      await mount(tester, card('height', power: 0, physical: false, depth: 0));
+      await ready(tester);
+      final neutral = (await tester.runAsync(() => pixels(tester, renderer)))!;
+      for (final depth in [0.0, 1.0, 3.0]) {
+        for (final x in [-1.0, 0.0, 1.0]) {
+          for (final y in [-1.0, 0.0, 1.0]) {
+            await mount(
+              tester,
+              card(
+                'height',
+                power: 0,
+                physical: false,
+                depth: depth,
+                pose: Offset(x, y),
+              ),
+            );
+            await ready(tester);
+            final actual = (await tester.runAsync(
+              () => pixels(tester, renderer),
+            ))!;
+            // Uniform background fixture isolates foreground/card-boundary displacement.
+            for (var i = 0; i < actual.length; i++) {
+              expect(
+                (actual[i] - neutral[i]).abs(),
+                lessThanOrEqualTo(i % 4 == 3 ? 0 : 1),
+              );
+            }
+          }
+        }
+      }
+    },
+  );
+  testWidgets('horizontal and vertical drag return continuously', (
+    tester,
+  ) async {
+    await mount(tester, card('low'));
+    await ready(tester);
+    final gesture = await tester.startGesture(tester.getCenter(renderer));
+    await gesture.moveBy(const Offset(35, 0));
+    await tester.pump();
+    expect(painter(tester).view.dy, 0);
+    await gesture.moveBy(const Offset(0, -40));
+    await tester.pump();
+    expect(painter(tester).view.dy, greaterThan(0));
+    await gesture.up();
+    await tester.pump();
+    expect(painter(tester).view, isNot(Offset.zero));
+    await tester.pumpAndSettle();
+    expect(painter(tester).view, Offset.zero);
+    await mount(
+      tester,
+      HolographicCard.low(
+        cardImage: asset('source'),
+        foilImage: asset('foil'),
+        shaderAssetPath: 'shaders/low.frag',
+        autoPlay: true,
+      ),
+    );
+    await ready(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    final automaticPose = painter(tester).view;
+    final touch = await tester.startGesture(tester.getCenter(renderer));
+    await tester.pump();
+    expect((painter(tester).view - automaticPose).distance, lessThan(1e-6));
+    await touch.up();
+    await tester.pump(const Duration(milliseconds: 300));
+    await mount(tester, const SizedBox());
+  });
+  testWidgets('failed texture reports error and displays original', (
+    tester,
+  ) async {
+    Object? failure;
+    await mount(
+      tester,
+      HolographicCard.low(
+        cardImage: asset('source'),
+        foilImage: const AssetImage('missing.png'),
+        onError: (e, s) => failure = e,
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    }
+    expect(failure, isNotNull);
+    expect(renderer, findsNothing);
+    expect(find.byType(Image), findsOneWidget);
+  });
+  testWidgets('quick replacement and disposal leave no stale resources', (
+    tester,
+  ) async {
+    await mount(tester, card('height'));
+    await mount(tester, card('medium'));
+    await mount(tester, card('low'));
+    await ready(tester);
+    expect(painter(tester).mode, 'low');
+    await mount(tester, const SizedBox());
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('multiple instances own separate shader/image handles', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Row(
+          children: [
+            SizedBox(width: 180, height: 252, child: card('low')),
+            SizedBox(width: 180, height: 252, child: card('medium')),
+          ],
         ),
       ),
     );
-    final Finder renderer = await _waitForRenderer(tester);
-    expect(tester.getSize(renderer), const Size(180, 180));
+    await ready(tester, count: 2);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
-}
-
-HolographicCard _card(MemoryImage image, {double effectStrength = 1}) {
-  return HolographicCard(
-    cardImage: image,
-    backgroundImage: image,
-    foregroundImage: image,
-    foregroundContourImage: image,
-    foregroundBloomImage: image,
-    effectStrength: effectStrength,
-  );
-}
-
-Future<Finder> _waitForRenderer(WidgetTester tester) async {
-  final Finder renderer = find.byKey(
-    const ValueKey('holographic-card-renderer'),
-  );
-  await tester.runAsync(
-    () => Future<void>.delayed(const Duration(milliseconds: 300)),
-  );
-  for (
-    int attempt = 0;
-    attempt < 30 && renderer.evaluate().isEmpty;
-    attempt++
-  ) {
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-  expect(renderer, findsOneWidget);
-  return renderer;
-}
-
-HolographicCardPainter _painter(WidgetTester tester, Finder renderer) {
-  final CustomPaint paint = tester.widget<CustomPaint>(
-    find.descendant(of: renderer, matching: find.byType(CustomPaint)),
-  );
-  return paint.painter! as HolographicCardPainter;
-}
-
-Uint8List _whitePng() {
-  return base64Decode(
-    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGP8////fwYGBgYmEAHCAD34BABm6tHAAAAAAElFTkSuQmCC',
-  );
+  testWidgets('single-axis unbounded constraints retain source aspect', (
+    tester,
+  ) async {
+    for (final widthOnly in [true, false]) {
+      final child = widthOnly
+          ? SizedBox(
+              width: 180,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [card('low')],
+              ),
+            )
+          : SizedBox(
+              height: 252,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [card('low')],
+              ),
+            );
+      await tester.pumpWidget(MaterialApp(home: Center(child: child)));
+      await ready(tester);
+      final size = tester.getSize(renderer);
+      expect(size.width / size.height, closeTo(100 / 140, 1e-6));
+    }
+  });
+  testWidgets('reduced motion disables physical rotation and internal depth', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: SizedBox(
+            width: 200,
+            height: 280,
+            child: card('height', pose: const Offset(1, 1)),
+          ),
+        ),
+      ),
+    );
+    await ready(tester);
+    expect(painter(tester).depth, 0);
+    final transform = tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('holographic-card-transform')),
+        )
+        .transform;
+    expect(transform.entry(0, 0), 1);
+    expect(transform.entry(1, 1), 1);
+  });
 }

@@ -17,3 +17,8 @@ dev_dependencies:
 flutter:
   shaders:
     - shaders/holographic_card.frag
+    - shaders/medium.frag
+    - shaders/low.frag
+    - test/fixtures/reference_foil.frag
+  assets:
+    - assets/holographic_foil.png

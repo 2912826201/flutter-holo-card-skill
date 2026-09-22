@@ -1,0 +1,111 @@
+{
+  "schema": 2,
+  "mode": "height",
+  "canvas": [
+    1000,
+    1397
+  ],
+  "temporary_files": [],
+  "format": {
+    "status": "pass"
+  },
+  "geometry": {
+    "status": "pass"
+  },
+  "visual": {
+    "status": "pass",
+    "files": {
+      "source.png": "5c72786c757a01802779f77eb4b5e2acd3d886e6ec729d3cd60f83b2e48fbec2",
+      "background.png": "857c9e622a49378b205fad6b3cf8b12f735ee102a464e1df21b3b7e24b69cba7",
+      "foreground.png": "329fe5075ecf600d9a05d50675e06138c342c3cc6fc2e1bd413d5952f208610c",
+      "foreground_contour.png": "369a7019a855353d1c23edfdbfd15e82a6901af4f511c464a8200ef8dba755dd",
+      "foreground_bloom.png": "997f74eeb40ebcb56332e4f7d09b7e7b4b40f57a5bea80034ac50220bd58576b"
+    },
+    "support": {
+      "contour-overlay.png": "1e7586848e0252a9f74d731e7950c2e16de249d3a53ae0422a3adc6e350b2c14",
+      "owner-mask.png": "d40df1bbf8e37eb6b90c81c995067d3ab69049be3a722383ffd7cb8f93e9d9b4"
+    },
+    "evidence": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/validation.md": "e1d73c7113f1528f5e599a412972153b41b973244301f6182e0a6eadd22cc92a",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/final-default.jpg": "b0c9942b5188846b7b955831ced3a1f7aa7f4086ac9b12b9500c7f3037add859",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/mobile-card.jpg": "cbcfd86cd511920f7d74aef0df04e2a9d8334bef86e350b7c84abdbf0a255223",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/mobile-controls.jpg": "01d4beb0064cca162f7724ff44c362608638e0e447b569a34fe27d15ffecdc35",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/final-height-active.jpg": "81b89299c4e0fe6e0a95a2204c8bac49dabd5ebdd6ebf89758b6633ba58de1a3",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/final-height-contact-sheet.jpg": "fcf53658013fcea6ee889bd0bbccfa63b5df30044c767fb2d3b96cc9143efb55",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-down.jpg": "620f03176649e3ad5219880d763b2611279e378a949a112addba887888de43da",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-left.jpg": "3ad6f80ea992280145bb5a6ec85ad39a8d1dd4cd65f8d6c950b8aab05b24853e",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-ne.jpg": "677f93e6effff1cec9cb506297448dcb19ea70fbc6efa66a96b74d6911fbf98c",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-neutral.jpg": "ad67013f0dc5b6954d0be7dea035b730ddd39a15ad1bfd43aa6d23ef98d1542c",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-nw.jpg": "924b135f09c9dadf0eecb262c0fe1136b664a67aa71399062026f3775d78b0f6",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-right.jpg": "2920c85c984c4e4e22a0aa4389d6071416aae00da7180b57cee9efba36ac3966",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-se.jpg": "6d896eabe2870b4e5ccccd70700265ceea787b35886a966832ebbf14860f7ab7",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-sw.jpg": "573566681cb4ec71ba7a959decd71c9e74071941ece580028ad3925162458b11",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-0-up.jpg": "c4b9756c7a0c15fbf1192c091548d9239b5da0bcab11e7b29fd0e171b9655249",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-down.jpg": "38cc5a0d4a6f426f5b55d0db99cb31ba68466b3b16db8521956cf6db90d9ac75",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-left.jpg": "7417feb30f546f5bc10de41e6e086523c6fe48e40447dde3b7a616d7eacbda1f",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-ne.jpg": "316596b3be899ce7aa98a0f67e7303aa3b805ac443c27a365fc31d353ab8ef7e",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-neutral.jpg": "1d3f09dd52ac8a3d6dac0bbc5b86330fe9fd0c9c1d3224dbcdea4c7c0c43fbe2",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-nw.jpg": "4f39ac168390243944dfe0776599a5b9bbdda7408a3e5eb198650b89fba8ac03",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-right.jpg": "23ca395ab2f5a9d7d0b2cf2144f8e0f7902b7e809f69453362a7d2038a54e8fd",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-se.jpg": "ff82a93e497c9b39ea1d076e602f4f68a797c3bdc73d1566c3da37714cc28f78",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-sw.jpg": "c70977cace6aedc3db4134fccd3dc6c1c89be481b9bfc466d063baad877aef0a",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-1-up.jpg": "2066ae37092b171cb88fd580b1b74d93d622d3fa815c17fd55f4bd38f11bf343",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-down.jpg": "393eb5cd3fb5bb0993ac4d0c107b2233cbbe7f5a5d5c45667be8b9da9669f0c9",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-left.jpg": "e4a006c499101137240c17fa992221613bf354afc079d01ad001f3f0e8602c87",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-ne.jpg": "3e84dd84caa483c17953c037601c108c0203f9b15367c80afec3341a2cfaccc2",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-neutral.jpg": "66bc6100f707287deb0782ce9bb3c48d56f571333b4d8cb78b649164e417f04e",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-nw.jpg": "c05d1d1718d75818b8a5a898738add525fc80557a3cc4ac78b7443371c5c1af6",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-right.jpg": "6f93df3a54d8187b10dd3eb463b24c9f312cc9f8ad042327ecb26a089a9c71ff",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-se.jpg": "7a96359bf2b24efa37cad7b4ddb418a9a1d3bf4c12ee337f53c2dd68eab77d7d",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-sw.jpg": "0883aaf739601033505e965b5132746904e8693a218825f145fa96b593b7f5f7",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/poses/final-height-3-up.jpg": "03682a8bb9bc3489b5c01d70b29c41f0d6f6ac42915823f92447098aee1fe715",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/height/candidate/contour-overlay.png": "1e7586848e0252a9f74d731e7950c2e16de249d3a53ae0422a3adc6e350b2c14",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/owner-overlay.png": "07f59a2a401b0c4c6ff7bbc6083a0b052cbca6ddd3bbf019db221533e33d2aa0"
+    },
+    "notes": "Passed local source/geometry checks and the scoped Web visual review documented in validation.md. Native application/device GPU validation has not been performed. Default material strength 0.65; 1.0 retains stronger reference response."
+  },
+  "foreground_review": {
+    "kind": "foreground-scope",
+    "mode": "height",
+    "decision": "pass",
+    "inputs": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/assets/card/source.png": "5c72786c757a01802779f77eb4b5e2acd3d886e6ec729d3cd60f83b2e48fbec2",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/owner-mask.png": "d40df1bbf8e37eb6b90c81c995067d3ab69049be3a722383ffd7cb8f93e9d9b4"
+    },
+    "evidence": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/owner-overlay.png": "07f59a2a401b0c4c6ff7bbc6083a0b052cbca6ddd3bbf019db221533e33d2aa0",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/prepare_demo.py": "c327d6df1c8b9d7fbda8a01653754b534450b9e2d382a4e820d6bbd938ad1786"
+    },
+    "notes": "Reviewed source-aligned overlay: both robots, filled green armor, printed panels, border and action strokes retained. Card-specific panel/armor repairs and small boundary allowance recorded in prepare_demo.py. No AI glyph redraw."
+  },
+  "background_repair": "harmonic-color-match-v1; known pixels restored exactly",
+  "background_source_rect_pixels": [
+    80,
+    112,
+    1000,
+    1397
+  ],
+  "background_source_rect": [
+    0.06896551724137931,
+    0.06909315237507711,
+    0.8620689655172413,
+    0.8618136952498457
+  ],
+  "inputs": {
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/assets/card/source.png": "5c72786c757a01802779f77eb4b5e2acd3d886e6ec729d3cd60f83b2e48fbec2",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/owner-mask.png": "d40df1bbf8e37eb6b90c81c995067d3ab69049be3a722383ffd7cb8f93e9d9b4",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/height-mask-review.json": "146579b809ffd371b33774bb0f272283bb1ed55e120d24ef2fb3448690ae628e",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/tianxiang_card/qa/v2/extended-background.png": "90657bfbd24007901b2c7c395ca3e818dc510b33e723552c50a4f7eac835c489"
+  },
+  "files": {
+    "source.png": "5c72786c757a01802779f77eb4b5e2acd3d886e6ec729d3cd60f83b2e48fbec2",
+    "background.png": "857c9e622a49378b205fad6b3cf8b12f735ee102a464e1df21b3b7e24b69cba7",
+    "foreground.png": "329fe5075ecf600d9a05d50675e06138c342c3cc6fc2e1bd413d5952f208610c",
+    "foreground_contour.png": "369a7019a855353d1c23edfdbfd15e82a6901af4f511c464a8200ef8dba755dd",
+    "foreground_bloom.png": "997f74eeb40ebcb56332e4f7d09b7e7b4b40f57a5bea80034ac50220bd58576b"
+  },
+  "support": {
+    "contour-overlay.png": "1e7586848e0252a9f74d731e7950c2e16de249d3a53ae0422a3adc6e350b2c14",
+    "owner-mask.png": "d40df1bbf8e37eb6b90c81c995067d3ab69049be3a722383ffd7cb8f93e9d9b4"
+  }
+}

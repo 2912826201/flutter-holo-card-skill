@@ -1,4 +1,4 @@
 interface:
-  display_name: "Build Flutter Holo Card"
-  short_description: "Build stable two-layer Flutter holo cards"
-  default_prompt: "Use $build-flutter-holo-card to build one repaired background and one source-faithful combined foreground containing every character and card-interface element. Apply white sketch highlights to the complete foreground and integrate the tested Flutter component unless I request asset-only mode."
+  display_name: "Flutter Holo Card · 三档"
+  short_description: "Build height, medium or low Flutter holographic cards"
+  default_prompt: "Use $build-flutter-holo-card to build a Flutter holographic card. Route height (default), medium or low independently from asset-only. Preserve source colors, use source-extracted foreground contours where required, validate mode-bound assets and integrate the bundled shared foil material."

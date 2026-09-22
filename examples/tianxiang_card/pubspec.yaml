@@ -1,0 +1,30 @@
+name: tianxiang_card
+description: Flutter holographic preview of the supplied card.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.11.0
+dependencies:
+  flutter:
+    sdk: flutter
+  build_flutter_holo_card_template:
+    path: ../../skills/build-flutter-holo-card/assets/flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/card/source.png
+    - qa/v2/height/candidate/source.png
+    - qa/v2/height/candidate/background.png
+    - qa/v2/height/candidate/foreground.png
+    - qa/v2/height/candidate/foreground_contour.png
+    - qa/v2/height/candidate/foreground_bloom.png
+    - qa/v2/height/candidate/contour-overlay.png
+    - qa/v2/medium/candidate/source.png
+    - qa/v2/medium/candidate/foreground_contour.png
+    - qa/v2/medium/candidate/foreground_bloom.png
+    - qa/v2/medium/candidate/contour-overlay.png
+    - qa/v2/low/candidate/source.png

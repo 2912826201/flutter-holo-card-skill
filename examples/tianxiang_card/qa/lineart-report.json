@@ -1,0 +1,29 @@
+{
+  "ok": false,
+  "reference_canvas": [
+    1000,
+    1397
+  ],
+  "generated_canvas": [
+    1061,
+    1483
+  ],
+  "resized_to_reference": true,
+  "input_mode": "white_lines_on_black",
+  "source_had_real_transparency": false,
+  "foreground_owner_coverage": 0.727171,
+  "strong_line_coverage": 0.142336,
+  "strong_line_ratio_within_foreground": 0.19574,
+  "signal_spill_coverage": 0.004689,
+  "opaque_outside_bright_ratio": 0.022586,
+  "errors": [
+    "Sketch line signal spills outside the foreground owner",
+    "Opaque line art must use a uniform solid-black matte; bright or checkerboard matte detected"
+  ],
+  "warnings": [],
+  "required_visual_review": [
+    "Confirm white sketch contours cover every foreground category: characters, objects, effects, typography, symbols, panels, credits, insets, logos, and decorative frame.",
+    "Reject scenery edges, filled glyph or panel regions, shading, hatching, texture strokes, invented lines, and matte residue.",
+    "Confirm the full canvas and every local contour remain registered; regenerate a shifted result instead of warping it."
+  ]
+}
