@@ -102,6 +102,59 @@ Future<List<int>> pixels(WidgetTester tester, Finder finder) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('background motion gain stays inside overscan at every extreme', () {
+    const rect = Rect.fromLTWH(36 / 522, 51 / 731, 450 / 522, 629 / 731);
+    expect(
+      safeBackgroundDistance(.715, const Offset(1, 1), .35, 3, 0, rect),
+      0,
+    );
+    final normal = safeBackgroundDistance(
+      .715,
+      const Offset(1, 0),
+      .24,
+      1,
+      1,
+      rect,
+    );
+    expect(
+      safeBackgroundDistance(.715, const Offset(1, 0), .24, 1, 2, rect),
+      closeTo(normal * 2, 1e-9),
+    );
+    for (final aspect in [.2, .715, 1.0, 2.0, 5.0]) {
+      for (final x in [-1.0, 0.0, 1.0]) {
+        for (final y in [-1.0, 0.0, 1.0]) {
+          final pose = Offset(x, y), c = backgroundCamera(Offset(x, y), .35);
+          for (final strength in [0.0, 1.0, 2.0, 4.0]) {
+            final d = safeBackgroundDistance(
+              aspect,
+              pose,
+              .35,
+              3,
+              strength,
+              rect,
+            );
+            for (final u in [0.0, 1.0]) {
+              for (final v in [0.0, 1.0]) {
+                final px = u - .5, py = (v - .5) / aspect;
+                final qx = (px + d / c[2] * (px - c[0])) / (1 + d / 2) + .5;
+                final qy =
+                    (py + d / c[2] * (py - c[1])) / (1 + d / 2) * aspect + .5;
+                expect(
+                  rect.left + qx * rect.width,
+                  inInclusiveRange(.001999, .998001),
+                );
+                expect(
+                  rect.top + qy * rect.height,
+                  inInclusiveRange(.001999, .998001),
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
   test('background projection neutral, depth zero and overscan safety', () {
     for (final aspect in [0.2, 0.715, 1.0, 2.0, 5.0]) {
       for (final uv in [

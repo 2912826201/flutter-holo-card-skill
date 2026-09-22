@@ -29,9 +29,10 @@ class CardDemo extends StatefulWidget {
 }
 
 class _CardDemoState extends State<CardDemo> {
-  double depth = 1;
+  double depth = 2;
+  double backgroundMotion = 3;
   double effect = 0.65;
-  double glow = 0.35;
+  double glow = 0.55;
   bool source = false;
   bool foil = true;
 
@@ -87,6 +88,7 @@ class _CardDemoState extends State<CardDemo> {
             1397 / 1621,
           ),
           depth: depth,
+          backgroundMotionStrength: backgroundMotion,
           effectStrength: effect,
           foilStrength: foil ? 1 : 0,
           contourGlowStrength: glow,
@@ -185,6 +187,20 @@ class _CardDemoState extends State<CardDemo> {
         ),
         if (mode == 'height')
           control('背景后退距离', depth, 0, 3, 6, (v) => depth = v),
+        if (mode == 'height') ...[
+          control(
+            '背景移动强度',
+            backgroundMotion,
+            0,
+            4,
+            40,
+            (v) => backgroundMotion = v,
+          ),
+          const Text(
+            '0 关闭移动 · 1 原始强度 · 达到背景边缘时自动限制',
+            style: TextStyle(fontSize: 11, color: Color(0xff82948a)),
+          ),
+        ],
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('整卡倾斜'),
@@ -230,9 +246,10 @@ class _CardDemoState extends State<CardDemo> {
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () => setState(() {
-            depth = 1;
+            depth = 2;
+            backgroundMotion = 3;
             effect = 0.65;
-            glow = 0.35;
+            glow = 0.55;
             source = false;
             foil = true;
             mode = 'height';

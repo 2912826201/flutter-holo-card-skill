@@ -8,3 +8,4 @@ __pycache__/
 build/
 coverage/
 examples/tianxiang_card/qa/v2/*/diagnostics/
+examples/akali_card/work/*/diagnostics/

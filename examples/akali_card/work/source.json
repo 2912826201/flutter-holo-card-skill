@@ -1,0 +1,14 @@
+{
+  "mode": "height",
+  "input_sha256": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c",
+  "output_sha256": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+  "kind": "normalized-source",
+  "status": "pass",
+  "inputs": {
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/input.jpg": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c"
+  },
+  "canvas": [
+    450,
+    629
+  ]
+}

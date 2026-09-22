@@ -1,0 +1,78 @@
+{
+  "schema": 2,
+  "mode": "medium",
+  "canvas": [
+    450,
+    629
+  ],
+  "temporary_files": [],
+  "format": {
+    "status": "pass"
+  },
+  "geometry": {
+    "status": "pass"
+  },
+  "visual": {
+    "status": "pass",
+    "files": {
+      "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+      "foreground_contour.png": "c1481f14eb3712dc29b68c06e66c7930c05721f14ffa1d3a294a395bad3e4ec1",
+      "foreground_bloom.png": "8f980c1b5f8d22284ff8bd48e244545a7fc9b719a51b08fe22dbf7c0e6a4013b"
+    },
+    "support": {
+      "contour-overlay.png": "73011628613a18f90e7769df6774d32a3d0049c6fbe23cf86aef55575c04d8a8",
+      "owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+    },
+    "evidence": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/README.md": "eee38efb3f70b2fc5ef4877dc0261b6d89e08639c101d518187700d4008f2150",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/qa/medium-active.jpg": "e440f54a6383e293534ae40291a051185bb2b303289cb8502fd7000b6287a415",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/qa/contour-fix/medium-depth0.0-x0.7-y-0.5-foil0.0-glow0.0-active1.0-power0.0.png": "a2910d4fe193ed188f4c392bd8c530c0ee2db1a5a347dd33f11b4f68405f0c90",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/qa/contour-fix/medium-depth0.0-x0.7-y-0.5-foil1.0-glow0.35-active1.0-power0.0.png": "a2910d4fe193ed188f4c392bd8c530c0ee2db1a5a347dd33f11b4f68405f0c90"
+    },
+    "notes": "本卡 medium 预览审查：实际观察轮廓/人物/双武器/整块面板叠合；Web角度高光连续。height检查27姿态单一卡边及背景采样，未见明显残影或露边；medium/low内部固定。3项真实卡图测试及analyze/Web构建通过。仅测试渲染器和Web，原生未验证。"
+  },
+  "foreground_review": {
+    "kind": "foreground-scope",
+    "mode": "medium",
+    "decision": "pass",
+    "inputs": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+    },
+    "evidence": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/owner-overlay.png": "421bf3d57e492ed784edde62dd1bd2675399606fc27ee73ea11740ee6eac42b5",
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/prepare_mask.py": "8fecbadc83b2aaaef69cc47f111d8acef1e2f6a393f0b86740dccf42c1f97fb7"
+    },
+    "notes": "复查源坐标叠加；补齐徽记周围黑框并增加两像素抗残影保护，人物武器及整块说明区保留。"
+  },
+  "normalization": {
+    "mode": "height",
+    "input_sha256": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c",
+    "output_sha256": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "kind": "normalized-source",
+    "status": "pass",
+    "inputs": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/input.jpg": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c"
+    },
+    "canvas": [
+      450,
+      629
+    ]
+  },
+  "inputs": {
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/source.json": "4931a6eea28eb49402affb06f479836c765eed30908e665396e0d72084f7a34c",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/input.jpg": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/mask-medium.json": "051e229a0821e2340eb3af96c3c2854821c62d486cd39836ecd7a4377c103e46"
+  },
+  "files": {
+    "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "foreground_contour.png": "c1481f14eb3712dc29b68c06e66c7930c05721f14ffa1d3a294a395bad3e4ec1",
+    "foreground_bloom.png": "8f980c1b5f8d22284ff8bd48e244545a7fc9b719a51b08fe22dbf7c0e6a4013b"
+  },
+  "support": {
+    "contour-overlay.png": "73011628613a18f90e7769df6774d32a3d0049c6fbe23cf86aef55575c04d8a8",
+    "owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+  }
+}

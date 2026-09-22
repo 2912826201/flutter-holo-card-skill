@@ -10,6 +10,19 @@
 
 三档共用参考项目的双向彩虹、箔纹和眩光，支持悬停、拖动、连续回正、受控姿态和关闭整卡倾斜。height 的背景使用 8% 延展区和中立校准投影，所有层共用源图 Alpha 边界；不再使用 160% 出框画布。景深范围 0–3，默认 1，负值需要迁移。
 
+## 三档拖动效果对比
+
+同一张卡、相同拖动轨迹，松手后连续回正。以下 GIF 来自 Flutter 组件的实际触摸事件与逐帧渲染，非 AI 生成动画。
+
+| height · 景深＋轮廓反射 | medium · 轮廓反射 | low · 纯镭射 |
+| :---: | :---: | :---: |
+| ![height：背景后退，前景固定，轮廓随角度反光](docs/previews/height.gif) | ![medium：原图固定，前景轮廓局部反光](docs/previews/medium.gif) | ![low：原图固定，仅彩虹箔纹和眩光](docs/previews/low.gif) |
+| 留意人物后方屋檐与天空的相对移动 | 留意武器、人物和卡框上扫过的亮线 | 没有额外描线，也没有内部视差 |
+
+轮廓默认强度已从 **0.35 调高至 0.55**。三档光效强度均为 0.65；height 演示使用后退距离 2、背景移动强度 3（组件默认仍为 1 / 1）。GIF 采用 256 色压缩，细线和渐变以交互预览为准；此录制不代表真机性能测试。
+
+[阿卡丽三档示例](examples/akali_card/README.md) · [动图复现方法](docs/previews/README.md)
+
 ## 使用
 
 安装 `skills/build-flutter-holo-card` 到 Skills 目录，再安装其 requirements.txt 中的 Python 依赖。

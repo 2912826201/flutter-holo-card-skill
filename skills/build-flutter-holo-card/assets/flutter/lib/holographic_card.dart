@@ -16,6 +16,7 @@ class HolographicCard extends StatefulWidget {
     required this.backgroundImage,
     required this.foregroundImage,
     this.depth = 1,
+    this.backgroundMotionStrength = 1,
     this.backgroundSourceRect = const Rect.fromLTWH(
       8 / 116,
       8 / 116,
@@ -31,7 +32,7 @@ class HolographicCard extends StatefulWidget {
     this.shaderAssetPath,
     this.effectStrength = 0.65,
     this.foilStrength = 1,
-    this.contourGlowStrength = 0.35,
+    this.contourGlowStrength = 0.55,
     this.idleEffectStrength = 0.22,
     this.viewSensitivity = 1,
     this.maxTiltRadians = 0.24,
@@ -57,6 +58,7 @@ class HolographicCard extends StatefulWidget {
     required this.backgroundImage,
     required this.foregroundImage,
     this.depth = 1,
+    this.backgroundMotionStrength = 1,
     this.backgroundSourceRect = const Rect.fromLTWH(
       8 / 116,
       8 / 116,
@@ -72,7 +74,7 @@ class HolographicCard extends StatefulWidget {
     this.shaderAssetPath,
     this.effectStrength = 0.65,
     this.foilStrength = 1,
-    this.contourGlowStrength = 0.35,
+    this.contourGlowStrength = 0.55,
     this.idleEffectStrength = 0.22,
     this.viewSensitivity = 1,
     this.maxTiltRadians = 0.24,
@@ -104,7 +106,7 @@ class HolographicCard extends StatefulWidget {
     this.shaderAssetPath,
     this.effectStrength = 0.65,
     this.foilStrength = 1,
-    this.contourGlowStrength = 0.35,
+    this.contourGlowStrength = 0.55,
     this.idleEffectStrength = 0.22,
     this.viewSensitivity = 1,
     this.maxTiltRadians = 0.24,
@@ -119,6 +121,7 @@ class HolographicCard extends StatefulWidget {
        backgroundImage = null,
        foregroundImage = null,
        depth = 0,
+       backgroundMotionStrength = 0,
        backgroundSourceRect = const Rect.fromLTWH(0, 0, 1, 1),
        assert(effectStrength >= 0 && effectStrength <= 1),
        assert(foilStrength >= 0 && foilStrength <= 1),
@@ -134,7 +137,7 @@ class HolographicCard extends StatefulWidget {
     this.shaderAssetPath,
     this.effectStrength = 0.65,
     this.foilStrength = 1,
-    this.contourGlowStrength = 0.35,
+    this.contourGlowStrength = 0.55,
     this.idleEffectStrength = 0.22,
     this.viewSensitivity = 1,
     this.maxTiltRadians = 0.24,
@@ -149,6 +152,7 @@ class HolographicCard extends StatefulWidget {
        backgroundImage = null,
        foregroundImage = null,
        depth = 0,
+       backgroundMotionStrength = 0,
        backgroundSourceRect = const Rect.fromLTWH(0, 0, 1, 1),
        foregroundContourImage = null,
        foregroundBloomImage = null,
@@ -167,6 +171,9 @@ class HolographicCard extends StatefulWidget {
 
   /// Foil-only intensity. Zero keeps contour light; effectStrength zero disables both.
   final double foilStrength;
+
+  /// Multiplier for height background recession, capped to valid overscan.
+  final double backgroundMotionStrength;
   final double depth, effectStrength, contourGlowStrength, idleEffectStrength;
   final double viewSensitivity, maxTiltRadians;
   final bool applyPhysicalTilt, autoPlay;
@@ -584,6 +591,13 @@ class _HolographicCardState extends State<HolographicCard>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.backgroundMotionStrength.isFinite ||
+        widget.backgroundMotionStrength < 0 ||
+        widget.backgroundMotionStrength > 4) {
+      throw ArgumentError(
+        'backgroundMotionStrength must be finite and within 0–4.',
+      );
+    }
     if (!widget.depth.isFinite || widget.depth < 0 || widget.depth > 3) {
       throw ArgumentError(
         'Negative depth removed: migrate to background distance 0–3.',
@@ -745,6 +759,7 @@ class _HolographicCardState extends State<HolographicCard>
       viewSensitivity: widget.viewSensitivity,
       depth: _reduceMotion ? 0 : widget.depth,
       sourceRect: widget.backgroundSourceRect,
+      backgroundMotionStrength: widget.backgroundMotionStrength,
       effectStrength:
           widget.effectStrength *
           ui.lerpDouble(widget.idleEffectStrength, 1, activation)!,

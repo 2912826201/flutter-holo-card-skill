@@ -31,7 +31,7 @@ HolographicCard.height(
 
 ## 空间与材质
 
-pose/controlledTilt 的 x 向右、y 向上，范围 [-1,1]。controlledActivation 为 0–1；idleEffectStrength 默认 .22，effectStrength 默认 .65（1 为参考实现全强度）。关闭全部光效设 effectStrength=0。foilStrength 默认 1，设为 0 只关闭镭射材质，可独立检查轮廓反射；contourGlowStrength 默认 .35，设为 0 只关闭轮廓。autoPlay 默认为 false；开启后按 8 秒周期轻微展示，触摸/悬停优先。physical tilt 与 viewSensitivity 独立；后者只改变材质角度响应。
+pose/controlledTilt 的 x 向右、y 向上，范围 [-1,1]。controlledActivation 为 0–1；idleEffectStrength 默认 .22，effectStrength 默认 .65（1 为参考实现全强度）。关闭全部光效设 effectStrength=0。foilStrength 默认 1，设为 0 只关闭镭射材质，可独立检查轮廓反射；contourGlowStrength 默认 .55，设为 0 只关闭轮廓。autoPlay 默认为 false；开启后按 8 秒周期轻微展示，触摸/悬停优先。physical tilt 与 viewSensitivity 独立；后者只改变材质角度响应。
 
 相机焦距为卡宽两倍，背景距离 `d=.04*min(卡宽,卡高)*depth`。逆整卡旋转得到局部相机 C；卡面点 P 的后平面交点为 `Q=P+d/Cz*(P-Cxy)`，除以中立尺度 `(1+d/f)` 恢复中立坐标，然后映射到背景 source rect。共享静态源 Alpha 裁剪全部输出；没有扩大的出框绘制区。depth=0 时内部投影恒等。
 
@@ -40,3 +40,7 @@ medium/low 只改变材质参数和可选整卡姿态，所有采样保持原图
 减少动画时关闭物理旋转/景深并立即回正，保留可控的静态材质响应。屏幕大小和单轴无界约束按源图宽高比布局。运行 `flutter analyze`、`flutter test` 和示例 `flutter build web --no-web-resources-cdn`，同时按所选档的视觉要求核验实际渲染。真机/native 未运行时必须明确标记未验证。
 
 轮廓验收必须使用非空的真实轮廓贴图：固定原图坐标和激活量，分别比较镭射开/关、轮廓开/关，以及左右/上下转动。验证高光沿线移动、非照亮区域淡出、没有全卡洗白，不能仅凭 shader 加载成功或黑色测试贴图判定有效。修改 GLSL include 后需清理相关构建缓存或更新 shader 入口，避免增量构建仍使用旧 shader。
+
+height 支持 `backgroundMotionStrength`（0–4，组件默认 1；预览默认 3、depth 默认 2），乘在背景后退距离上。0 关闭背景移动，1 恢复原始强度。根据当前姿态和 source rect 的四角投影统一限制有效距离，保留采样余量；不逐像素 clamp UV，避免边缘重复或拉伸。中立姿态仍恒等，depth=0 仍关闭内部视差；此参数不改变前景、轮廓、镭射或整卡倾斜。
+
+height 在背景侧加入随投影分离量变化的柔和遮挡阴影，仅作用于非前景区域，并受总光效控制；中立、零景深、零移动强度、零光效时消失。8% 延展限制了最大安全视差，提升强度后可能触及统一距离上限。

@@ -1,0 +1,30 @@
+name: akali_card
+description: Flutter holographic preview of the supplied card.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.11.0
+dependencies:
+  flutter:
+    sdk: flutter
+  build_flutter_holo_card_template:
+    path: ../../skills/build-flutter-holo-card/assets/flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+  - work/source.png
+  - work/low/candidate/source.png
+  - work/height/candidate/contour-overlay.png
+  - work/height/candidate/foreground_bloom.png
+  - work/height/candidate/background.png
+  - work/height/candidate/source.png
+  - work/height/candidate/foreground.png
+  - work/height/candidate/foreground_contour.png
+  - work/medium/candidate/contour-overlay.png
+  - work/medium/candidate/foreground_bloom.png
+  - work/medium/candidate/source.png
+  - work/medium/candidate/foreground_contour.png

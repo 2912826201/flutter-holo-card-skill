@@ -1,0 +1,94 @@
+{
+  "schema": 2,
+  "mode": "height",
+  "canvas": [
+    450,
+    629
+  ],
+  "format": {
+    "status": "pass"
+  },
+  "geometry": {
+    "status": "pass"
+  },
+  "visual": {
+    "status": "pass",
+    "files": {
+      "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+      "background.png": "1d171768eb577d493c9a93d5d221ffe58667c9351dfb2ce680a053656f5dc36d",
+      "foreground.png": "cd133d552645f120f16ba8fef556e1850a8be2ce965034202641fe461240f0e5",
+      "foreground_contour.png": "c1481f14eb3712dc29b68c06e66c7930c05721f14ffa1d3a294a395bad3e4ec1",
+      "foreground_bloom.png": "8f980c1b5f8d22284ff8bd48e244545a7fc9b719a51b08fe22dbf7c0e6a4013b",
+      "holographic_foil.png": "e075c65cd569021b6f3aebe457434fcff444d6c4c5d6bdcdbb1b66565321a948"
+    },
+    "evidence": {
+      "audit/0-README.md": "eee38efb3f70b2fc5ef4877dc0261b6d89e08639c101d518187700d4008f2150",
+      "audit/1-height-active.jpg": "994d612d5685f56f22664dff6ccc58ef84618c3523543555478bc00fcbdaf981",
+      "audit/2-depth-grid.jpg": "fb931037ed5370266e739aa674193959c496f584dc76ac759ccc6b462ce42758",
+      "audit/3-height-neutral.jpg": "1555b89fbd8f84b48360ef4df577617a56d50d35d1f40d4e5b2ec21df2136d70"
+    },
+    "notes": "本卡 height 预览审查：实际观察轮廓/人物/双武器/整块面板叠合；Web角度高光连续。height检查27姿态单一卡边及背景采样，未见明显残影或露边；medium/low内部固定。3项真实卡图测试及analyze/Web构建通过。仅测试渲染器和Web，原生未验证。"
+  },
+  "foreground_review": {
+    "kind": "foreground-scope",
+    "mode": "height",
+    "decision": "pass",
+    "inputs": {
+      "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+      "owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+    },
+    "evidence": {
+      "audit/upstream-0-owner-overlay.png": "421bf3d57e492ed784edde62dd1bd2675399606fc27ee73ea11740ee6eac42b5",
+      "audit/upstream-1-prepare_mask.py": "8fecbadc83b2aaaef69cc47f111d8acef1e2f6a393f0b86740dccf42c1f97fb7"
+    },
+    "notes": "复查源坐标叠加；补齐徽记周围黑框并增加两像素抗残影保护，人物武器及整块说明区保留。"
+  },
+  "background_repair": "harmonic-color-match-v1; known pixels restored exactly",
+  "background_source_rect_pixels": [
+    36,
+    51,
+    450,
+    629
+  ],
+  "background_source_rect": [
+    0.06896551724137931,
+    0.06976744186046512,
+    0.8620689655172413,
+    0.8604651162790697
+  ],
+  "normalization": {
+    "mode": "height",
+    "input_sha256": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c",
+    "output_sha256": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "kind": "normalized-source",
+    "status": "pass",
+    "inputs": {
+      "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/input.jpg": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c"
+    },
+    "canvas": [
+      450,
+      629
+    ]
+  },
+  "files": {
+    "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "background.png": "1d171768eb577d493c9a93d5d221ffe58667c9351dfb2ce680a053656f5dc36d",
+    "foreground.png": "cd133d552645f120f16ba8fef556e1850a8be2ce965034202641fe461240f0e5",
+    "foreground_contour.png": "c1481f14eb3712dc29b68c06e66c7930c05721f14ffa1d3a294a395bad3e4ec1",
+    "foreground_bloom.png": "8f980c1b5f8d22284ff8bd48e244545a7fc9b719a51b08fe22dbf7c0e6a4013b",
+    "holographic_foil.png": "e075c65cd569021b6f3aebe457434fcff444d6c4c5d6bdcdbb1b66565321a948"
+  },
+  "provenance": {
+    "source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "source.json": "4931a6eea28eb49402affb06f479836c765eed30908e665396e0d72084f7a34c",
+    "input.jpg": "9718d9cfc6e65e74c2d2422d76d45eafa9b56b2cc74e3146aef2e7f577cfec7c",
+    "owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144",
+    "mask-height.json": "45b8104a6b80f79c0529f3ce5a07e39391392283d97d2619dd7ceb0e95f5c8fb",
+    "extended-background.png": "14be5405bed274a0d79d0b0c9ec8338a4b76f677937eaed830d1ad72be3aa108"
+  },
+  "audit_files": {
+    "audit/contour-overlay.png": "73011628613a18f90e7769df6774d32a3d0049c6fbe23cf86aef55575c04d8a8",
+    "audit/owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+  },
+  "kind": "accepted-export"
+}

@@ -28,6 +28,46 @@ Offset projectBackgroundUv(
   );
 }
 
+// A single distance cap keeps the projection coherent; never clamp individual
+// texture coordinates (which stretches/repeats the background at its edges).
+double safeBackgroundDistance(
+  double aspect,
+  Offset pose,
+  double radians,
+  double depth,
+  double strength,
+  Rect sourceRect,
+) {
+  final camera = backgroundCamera(pose, radians);
+  final requested = .04 * math.min(1.0, 1 / aspect) * depth * strength;
+  bool fits(double d) {
+    for (final x in [0.0, 1.0]) {
+      for (final y in [0.0, 1.0]) {
+        final px = x - .5, py = (y - .5) / aspect;
+        final u = (px + d / camera[2] * (px - camera[0])) / (1 + d / 2) + .5;
+        final v =
+            (py + d / camera[2] * (py - camera[1])) / (1 + d / 2) * aspect + .5;
+        final tx = sourceRect.left + u * sourceRect.width;
+        final ty = sourceRect.top + v * sourceRect.height;
+        if (tx < .002 || tx > .998 || ty < .002 || ty > .998) return false;
+      }
+    }
+    return true;
+  }
+
+  if (fits(requested)) return requested;
+  double lo = 0, hi = requested;
+  for (var i = 0; i < 24; i++) {
+    final mid = (lo + hi) / 2;
+    if (fits(mid)) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
 class HolographicCardPainter extends CustomPainter {
   const HolographicCardPainter({
     required this.shader,
@@ -35,6 +75,7 @@ class HolographicCardPainter extends CustomPainter {
     required this.mode,
     required this.view,
     required this.depth,
+    this.backgroundMotionStrength = 1,
     required this.effectStrength,
     this.foilStrength = 1,
     required this.contourGlowStrength,
@@ -46,6 +87,7 @@ class HolographicCardPainter extends CustomPainter {
   final List<ui.Image> images;
   final String mode;
   final Offset view;
+  final double backgroundMotionStrength;
   final double depth,
       effectStrength,
       foilStrength,
@@ -68,7 +110,16 @@ class HolographicCardPainter extends CustomPainter {
     if (mode != 'low') values.addAll([contourGlowStrength, foilStrength]);
     if (mode == 'height') {
       values.addAll(backgroundCamera(view, maxTiltRadians));
-      values.add(0.04 * math.min(1.0, size.height / size.width) * depth);
+      values.add(
+        safeBackgroundDistance(
+          size.width / size.height,
+          view,
+          maxTiltRadians,
+          depth,
+          backgroundMotionStrength,
+          sourceRect,
+        ),
+      );
       values.addAll([
         sourceRect.left,
         sourceRect.top,
@@ -90,6 +141,7 @@ class HolographicCardPainter extends CustomPainter {
       old.shader != shader ||
       old.view != view ||
       old.depth != depth ||
+      old.backgroundMotionStrength != backgroundMotionStrength ||
       old.effectStrength != effectStrength ||
       old.foilStrength != foilStrength ||
       old.contourGlowStrength != contourGlowStrength ||

@@ -1,0 +1,14 @@
+{
+  "kind": "foreground-scope",
+  "mode": "medium",
+  "decision": "pass",
+  "inputs": {
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/source.png": "fb33c242313a553c37a16ba134a11feef4a774d71a90d5bc34b70a49ad346356",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/owner-mask.png": "9fa7d8fa5b2a18112a94bbca34777517f18b216639ab4da95b280881a0ffe144"
+  },
+  "evidence": {
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/owner-overlay.png": "421bf3d57e492ed784edde62dd1bd2675399606fc27ee73ea11740ee6eac42b5",
+    "/Users/ykxt/Documents/Projects/flutter-holo-card-skill/examples/akali_card/work/prepare_mask.py": "8fecbadc83b2aaaef69cc47f111d8acef1e2f6a393f0b86740dccf42c1f97fb7"
+  },
+  "notes": "复查源坐标叠加；补齐徽记周围黑框并增加两像素抗残影保护，人物武器及整块说明区保留。"
+}
