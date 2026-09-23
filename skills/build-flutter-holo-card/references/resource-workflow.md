@@ -10,6 +10,15 @@
 6. 检查 candidate 中 contour-overlay、背景/前景、中立合成和 Flutter 各姿态截图，按对应档位标准审查。`asset_pipeline.py review --mode MODE --bundle work/MODE/candidate --decision pass --evidence work/screenshots/neutral.jpg work/screenshots/active.jpg --notes '实际观察及测试范围'`。不能仅凭图片打开成功就 pass。存在缺陷时 fail 并迭代。
 7. `check_assets.py --mode MODE --bundle work/MODE/candidate` 通过后才能交付/集成。`--candidate` 仅用于调试，返回 accepted=false。失败重试先将原候选移入 diagnostics，不能因旧文件仍存在就继续。清理使用 `cleanup_assets.py --mode MODE --bundle ...`，只删除 manifest 中登记的 temporary_files；不删除报告、来源、叠加图或截图。
 
+## 生图拒绝时降档
+
+只有生成服务明确返回拒绝（如 `moderation_blocked`）才使用此路由；记录被拒绝的步骤、服务返回的原始错误和已尝试档位。错误没有给出具体理由时不要猜测原因。停止使用当前档位的候选产物，将其留在 diagnostics，然后从同一原图和当前输入摘要开始下一档；不复用被拒绝或未通过审查的文件，也不改写上一档报告为通过。
+
+- `height` 的遮罩或补背景生图被拒绝：尝试 `medium`。它只从原图提取前景线条及 bloom，不需要背景补绘或前景彩色生成；前景范围仍须用可靠的非生图方法确定，并按 medium 独立审查遮罩与轮廓。审查不合格时在 medium 内继续修正，不冒充通过，也不因此降到 low。
+- `medium` 若仍有必需的生图请求被明确拒绝：尝试 `low`。`low` 只用原图与共用箔纹，不调用生图；按 low 标准重新 build、review、check。
+
+降档后使用实际档位的 `--mode`、资源清单、Flutter 构造和验收标准。最终说明请求档位、实际档位、拒绝发生的位置与各档验收结果。生成结果质量差、尺寸错误、对不齐或格式/几何/视觉审查失败时，在当前档持续迭代直到通过验收；不能把它们写成“被拒绝”并自动降档。工具超时或脚本报错应在当前档排查恢复，同样不触发降档。
+
 ## 确定性制作
 
 `asset_pipeline.py` 对原图做高斯降噪、Sobel 梯度、非极大值抑制与滞后阈值筛选，仅保留遮罩范围内的边缘。轮廓为不透明灰度 RGBA；bloom 为 R 近光晕、G 远光晕、B=0、A=255。前景 RGB 逐像素复制原图。medium 不输出运行时前景彩图。
