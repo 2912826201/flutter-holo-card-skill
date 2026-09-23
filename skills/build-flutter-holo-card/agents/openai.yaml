@@ -1,4 +1,4 @@
 interface:
   display_name: "Flutter Holo Card · 三档"
   short_description: "Build height, medium or low Flutter holographic cards"
-  default_prompt: "Use $build-flutter-holo-card to build a Flutter holographic card. Route height (default), medium or low independently from asset-only. Preserve source colors, use image generation for foreground separation, background completion and foreground sketches, accept asset-specific quality thresholds with at most one edit per asset and integrate the bundled shared foil material."
+  default_prompt: "Use $build-flutter-holo-card to create a holographic card. With no tier specified, deliver an adjustable three-tier demo with current-component and full-demo ZIP exports. Honor explicit height, medium or low and assets-only scopes, use image generation only for required assets, and preserve the reference foil material."

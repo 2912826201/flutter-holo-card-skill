@@ -87,6 +87,59 @@ class PipelineTests(unittest.TestCase):
             )
         )
 
+    def test_demo_generator_only_packages_requested_tier(self):
+        from create_demo import create_demo
+        for mode in ("low", "medium", "height"):
+            _, bundle = self.prepare(mode)
+            self.accept(bundle, mode)
+            output = create_demo({mode: bundle}, self.root / ("demo-" + mode), title="Card $value")
+            payload = json.loads((output / "assets/export_payload.json").read_text())
+            self.assertEqual(payload["modes"], [mode])
+            self.assertEqual({p.name for p in (output / "assets/holographic_card" / mode).iterdir()}, set(pipeline.RUNTIME[mode]))
+            self.assertEqual(len(payload["images"]), len(pipeline.RUNTIME[mode]) + 1)
+            self.assertNotIn(str(self.root), json.dumps(payload))
+            self.assertNotIn("assets/export_payload.json", payload["sources"])
+            self.assertIn(r"Card \$value", (output / "lib/demo_defaults.dart").read_text())
+            with self.assertRaisesRegex(ValueError, "Destination exists"):
+                create_demo({mode: bundle}, output)
+
+    def test_demo_generator_three_tiers_reuses_source_and_rejects_unreviewed(self):
+        from create_demo import create_demo
+        bundles = {}
+        for mode in ("low", "medium", "height"):
+            fixture = PipelineTests()
+            fixture.setUp()
+            self.addCleanup(fixture.doCleanups)
+            _, bundle = fixture.prepare(mode)
+            if mode == "low":
+                with self.assertRaises(ValueError):
+                    create_demo({mode: bundle}, self.root / "unreviewed")
+            fixture.accept(bundle, mode)
+            bundles[mode] = bundle
+        output = create_demo(bundles, self.root / "all-demo")
+        payload = json.loads((output / "assets/export_payload.json").read_text())
+        self.assertEqual(payload["modes"], ["height", "medium", "low"])
+        self.assertEqual(len(payload["images"]), 10)
+        self.assertEqual(payload["card"]["sourceRect"], pipeline.read_json(bundles["height"] / "manifest.json")["background_source_rect"])
+
+    def test_demo_rejects_mixed_card_sources(self):
+        from create_demo import create_demo
+        fixtures = []
+        for mode in ("low", "medium"):
+            fixture = PipelineTests()
+            fixture.setUp()
+            self.addCleanup(fixture.doCleanups)
+            if mode == "medium":
+                image = Image.open(fixture.source).convert("RGBA")
+                image.putpixel((50, 50), (100, 120, 140, 255))
+                image.save(fixture.source)
+            _, bundle = fixture.prepare(mode)
+            fixture.accept(bundle, mode)
+            fixtures.append((mode, bundle))
+        with self.assertRaisesRegex(ValueError, "exact same source"):
+            create_demo(dict(fixtures), self.root / "mixed-demo")
+        self.assertFalse((self.root / "mixed-demo").exists())
+
     def test_mode_specific_runtime_counts(self):
         for mode, count in [("height", 5), ("medium", 3), ("low", 1)]:
             _, b = self.prepare(mode)

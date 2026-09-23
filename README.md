@@ -4,7 +4,7 @@
 
 ## 三种效果
 
-下面是同一张卡在相同拖动轨迹下的实际 Flutter 渲染效果：
+未指定等级时默认交付三档可切换、参数可调的 Flutter Web Demo。明确指定等级时只生成该档所需素材和效果：
 
 | `height` · 立体全息 | `medium` · 轮廓反射 | `low` · 纯镭射 |
 | :---: | :---: | :---: |
@@ -29,7 +29,8 @@
 - **生图制作素材**：透明前景、补全背景与前景素描优先由生图完成；只做整画布适配和打包，不自动改用手工分离、裁切、程序描线或背景拼补。
 - **随手势响应**：支持鼠标悬停、触摸拖动、平滑回正，也支持由应用控制姿态；整卡倾斜和自动展示可单独开关。
 - **效果可调**：可分别调节镭射材质、轮廓反光和整体光效；`height` 还可调节景深与背景移动。
-- **交付到 Flutter 项目**：Skill 制作所选档位的卡图资源，并集成配套组件、Shader 和箔纹；使用 `asset-only` 时只交付资源。
+- **一键导出**：调好等级与参数后，可下载当前组件及该档资源，或下载完整 Demo 和全部已请求资源。导出的参数成为默认值，完整 Demo 可继续调参和再次导出。
+- **按指令交付**：明确 medium 时只生成素描，low 不调用生图；`height assets-only` 只生成 height 素材，跳过组件与 Demo。
 
 ## 生成速度与验收
 
@@ -37,7 +38,7 @@
 
 按素材分别评分：前景 **85/100**、背景 **80/100**、前景素描 **75/100**，组合预览 **80/100**。允许少量发丝遗漏、素描简化、轻微局部偏差及合理的新背景纹理；文件完整性、透明度、可用画布和明显主体缺失仍检查。边缘命中率仅作为诊断，不能自动否决肉眼可用的结果。量表和证据格式见[质量评分](skills/build-flutter-holo-card/references/quality-policy.md)。
 
-素描首轮以“以素描风格绘画卡片除背景外的元素”为目标描述。前景文字按整块面板保留；背景直接使用完整生成结果，不做原图背景硬回填。asset-only 只做素材与叠加预览验收，不强制建立 Flutter Demo。
+素描首轮以“以素描风格绘画卡片除背景外的元素”为目标描述。前景文字按整块面板保留；背景直接使用完整生成结果，不做原图背景硬回填。assets-only 只做素材与叠加预览验收，不强制建立 Flutter Demo。
 
 ## 使用
 
@@ -46,9 +47,12 @@
 ```text
 使用 $build-flutter-holo-card，height，把这张卡集成到 Flutter 项目。
 使用 $build-flutter-holo-card，medium，保留原图并让前景轮廓随角度反光。
-使用 $build-flutter-holo-card，low，asset-only。
+使用 $build-flutter-holo-card，把这张卡做成可调参的三档 Demo。
+使用 $build-flutter-holo-card，height assets-only。
+使用 $build-flutter-holo-card，medium assets-only。
+使用 $build-flutter-holo-card，low assets-only。
 ```
 
-不指定档位时使用 `height`。`asset-only` 可与任一档位组合。
+未指定等级时默认三档 Demo，初始选中 `height`；指定等级时只制作该档。`assets-only` 可与任一档位组合，兼容旧写法 `asset-only`；单独使用时交付三档资源合集。生成与导出说明见 [Demo 流程](skills/build-flutter-holo-card/references/demo-export.md)。
 
 材质来源及许可见 [第三方说明](THIRD_PARTY_NOTICES.md)。
