@@ -1,6 +1,6 @@
 # Flutter 渲染与集成
 
-完整集成使用 `scripts/integrate_flutter.py --mode MODE --bundle WORK/MODE/candidate --project TARGET`。只接受全部验收通过的 candidate，复制本 skill 的 Flutter 包（代码、三档 shader、共享 include、箔纹和许可），更新目标 pubspec 的 path dependency 与卡图 assets，保留原 pubspec 备份。该脚本不依赖作者机器上的 chaoqushang 路径。已存在的用户目录不会被静默覆盖；需要先检查差异再迁移。`asset-only` 跳过项目写入，交付对应运行时资源、共享箔纹、映射和审查报告。
+完整集成使用 `scripts/integrate_flutter.py --mode MODE --bundle WORK/MODE/candidate --project TARGET`。只接受全部验收通过的 candidate，复制本 skill 的 Flutter 包（代码、三档 shader、共享 include、箔纹和许可），更新目标 pubspec 的 path dependency 与卡图 assets，保留原 pubspec 备份。已存在的用户目录不会被静默覆盖；需要先检查差异再迁移。`asset-only` 跳过项目写入，交付对应运行时资源、共享箔纹、映射和审查报告。
 
 包名 `build_flutter_holo_card_template`，默认箔纹与 Shader 使用 package asset 路径。若直接复制进 lib 而非保留 package，显式指定 foilImage 和 shaderAssetPath，并按模板 pubspec 注册全部 shader，保留 foil_material.glsl、contour_material.glsl 相对 include。
 
@@ -37,7 +37,7 @@ pose/controlledTilt 的 x 向右、y 向上，范围 [-1,1]。controlledActivati
 
 medium/low 只改变材质参数和可选整卡姿态，所有采样保持原图 UV。height/medium 的白色轮廓是随角度移动的局部反射，使用与镭射相同的光源坐标驱动斜向亮带，离开亮带后淡出；不能做成整圈常亮描边。核心线和两级光晕共用原图 UV，在高光位置局部恢复被箔光占用的亮度空间，然后限制发光能量。轮廓采用独立感知强度曲线，避免静止衰减与剩余亮度连乘导致光效消失。原图通过通用 ImageProvider 加载，图片句柄 clone 后独立释放；过期加载被取消，换图不保留旧结果。
 
-减少动画时关闭物理旋转/景深并立即回正，保留可控的静态材质响应。屏幕大小和单轴无界约束按源图宽高比布局。运行 `flutter analyze`、`flutter test` 和示例 `flutter build web --no-web-resources-cdn`，同时按所选档的视觉要求核验实际渲染。真机/native 未运行时必须明确标记未验证。
+减少动画时关闭物理旋转/景深并立即回正，保留可控的静态材质响应。屏幕大小和单轴无界约束按源图宽高比布局。在目标项目运行 `flutter analyze` 和适用的 `flutter test`；需要 Web 交付时再构建 Web，并按所选档的视觉要求核验实际渲染。asset-only 不要求创建示例项目或执行 Flutter 检查。真机/native 未运行时必须明确标记未验证。
 
 轮廓验收必须使用非空的真实轮廓贴图：固定原图坐标和激活量，分别比较镭射开/关、轮廓开/关，以及左右/上下转动。验证高光沿线移动、非照亮区域淡出、没有全卡洗白，不能仅凭 shader 加载成功或黑色测试贴图判定有效。修改 GLSL include 后需清理相关构建缓存或更新 shader 入口，避免增量构建仍使用旧 shader。
 

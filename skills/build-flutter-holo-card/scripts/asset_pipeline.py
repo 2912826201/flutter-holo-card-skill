@@ -2,7 +2,6 @@
 """Mode-bound, hash-bound card preparation. Candidates are never accepted implicitly."""
 from __future__ import annotations
 import argparse
-from collections import deque
 import hashlib
 import json
 import math
@@ -13,6 +12,7 @@ import uuid
 
 import numpy as np
 from PIL import Image, ImageFilter
+from quality_review import REQUIRED, record as quality_record, verify as verify_quality
 
 MODES = ("height", "medium", "low")
 RUNTIME = {
@@ -55,6 +55,7 @@ def verify_binding(record, mode, paths):
         or record.get("inputs") != bind(paths)
     ):
         raise ValueError("Failed, stale or cross-mode upstream review")
+    verify_quality(record.get("quality"), ("foreground",))
     if not record.get("notes") or not record.get("evidence"):
         raise ValueError("Visual review requires notes and evidence")
     for path, expected in record["evidence"].items():
@@ -68,155 +69,88 @@ def mask_pixels(path, size):
     if image.mode not in ("1", "L") or image.size != size:
         raise ValueError("Mask must be grayscale and exactly aligned to source canvas")
     pixels = np.asarray(image.convert("L"))
-    # Soft values allowed only within one pixel of a binary boundary.
-    binary = Image.fromarray(np.where(pixels >= 128, 255, 0).astype("uint8"))
-    boundary = np.asarray(binary.filter(ImageFilter.MaxFilter(3))) != np.asarray(
-        binary.filter(ImageFilter.MinFilter(3))
-    )
-    gray = (pixels > 4) & (pixels < 251)
-    if np.any(gray & ~boundary):
-        raise ValueError(
-            "Gray mask interiors: retain regions must be filled, not soft shading"
-        )
-    coverage = float((pixels >= 128).mean())
-    if not 0.01 < coverage < 0.99:
-        raise ValueError("Mask foreground coverage is empty or implausibly full")
+    # Natural antialiasing and translucency belong to the generated matte.
+    if not (pixels > 4).any() or not (pixels < 251).any():
+        raise ValueError("Mask needs both foreground and background")
     return pixels
 
 
-def edges(source, mask):
-    """Gaussian denoise, Sobel gradient, nonmaximum suppression, hysteresis."""
-    gray = np.asarray(
-        source.convert("L").filter(ImageFilter.GaussianBlur(0.7)), dtype=float
-    )
-    padded = np.pad(gray, 1, mode="reflect")
-    gx = (
-        padded[:-2, 2:]
-        + 2 * padded[1:-1, 2:]
-        + padded[2:, 2:]
-        - padded[:-2, :-2]
-        - 2 * padded[1:-1, :-2]
-        - padded[2:, :-2]
-    ) / 4
-    gy = (
-        padded[2:, :-2]
-        + 2 * padded[2:, 1:-1]
-        + padded[2:, 2:]
-        - padded[:-2, :-2]
-        - 2 * padded[:-2, 1:-1]
-        - padded[:-2, 2:]
-    ) / 4
-    mag = np.hypot(gx, gy)
-    angle = (np.rad2deg(np.arctan2(gy, gx)) + 180) % 180
-    sector = (np.floor((angle + 22.5) / 45).astype(int)) % 4
-    thin = np.zeros_like(mag)
-    for i, (dy, dx) in enumerate(((0, 1), (1, 1), (1, 0), (1, -1))):
-        keep = (
-            (sector == i)
-            & (mag >= np.roll(mag, (dy, dx), (0, 1)))
-            & (mag > np.roll(mag, (-dy, -dx), (0, 1)))
-        )
-        thin[keep] = mag[keep]
-    thin[[0, -1], :] = 0
-    thin[:, [0, -1]] = 0
-    thin[mask < 128] = 0
-    positive = thin[thin > 0]
-    if not positive.size:
-        raise ValueError("No source edges inside foreground")
-    high = max(12.0, float(np.percentile(positive, 65)))
-    weak, selected = thin >= high * 0.4, thin >= high
-    queue = deque(zip(*np.where(selected)))
-    h, w = gray.shape
-    while queue:
-        y, x = queue.popleft()
-        for yy in range(max(0, y - 1), min(h, y + 2)):
-            for xx in range(max(0, x - 1), min(w, x + 2)):
-                if weak[yy, xx] and not selected[yy, xx]:
-                    selected[yy, xx] = True
-                    queue.append((yy, xx))
-    return np.where(selected, np.clip(thin / high * 220, 80, 255), 0).astype("uint8")
-
-
-def maps(source, mask):
-    core = Image.fromarray(edges(source, mask))
-    radius = max(0.7, source.width / 1000 * 2)
+def bloom_from_core(core, width):
+    radius = max(0.7, width / 1000 * 2)
     bloom = Image.merge(
         "RGBA",
         (
             core.filter(ImageFilter.GaussianBlur(radius)),
             core.filter(ImageFilter.GaussianBlur(radius * 3)),
-            Image.new("L", source.size, 0),
-            Image.new("L", source.size, 255),
+            Image.new("L", core.size, 0),
+            Image.new("L", core.size, 255),
         ),
     )
     return core.convert("RGBA"), bloom
 
 
-def match_background_boundary(generated, source, known, origin):
-    """Harmonic color correction into unknown areas; known pixels remain exact.
+def guided_maps(source, mask, guide_path):
+    """Use the generated sketch itself as the light map; inspect, never snap it.
 
-    A coarse-to-fine Laplace solve transports boundary color differences, while
-    keeping the generated texture gradients inside the hidden/extended regions.
-    This is not edge-clamped texture sampling or a replacement for visual review.
+    Original-art edges are used only as a tolerance-based registration check.
+    Heuristics are diagnostics only; the visual scorecard decides usability.
     """
-    bg = np.asarray(generated.convert("RGB"), dtype=np.float32)
-    target = bg.copy()
-    x, y = origin
-    h, w = known.shape
-    target[y : y + h, x : x + w][known] = np.asarray(source.convert("RGB"))[known]
-    anchors = np.zeros(bg.shape[:2], dtype=bool)
-    anchors[y : y + h, x : x + w] = known
-    delta = target - bg
-    correction = None
-    sizes = []
-    width, height = generated.size
-    while min(width, height) > 24:
-        sizes.append((width, height))
-        width = (width + 1) // 2
-        height = (height + 1) // 2
-    sizes.append((width, height))
-    for size in reversed(sizes):
-        fixed = (
-            np.asarray(
-                Image.fromarray(anchors.astype("uint8") * 255).resize(
-                    size, Image.Resampling.NEAREST
-                )
-            )
-            > 0
+    with Image.open(guide_path) as opened:
+        guide = opened.copy()
+    if guide.mode not in ("1", "L") or guide.size != source.size:
+        raise ValueError("AI sketch must be grayscale and source-aligned")
+    pixels = np.asarray(guide.convert("L"))
+    lines = pixels >= 32
+    coverage = float(lines.mean())
+    if coverage == 0 or coverage >= 0.95:
+        raise ValueError("AI sketch is empty or filled like a matte")
+    tolerance = max(2, round(source.width * 0.006))
+    neighborhood = 2 * tolerance + 1
+    scope = np.asarray(
+        Image.fromarray(np.where(mask >= 128, 255, 0).astype("uint8")).filter(
+            ImageFilter.MaxFilter(neighborhood)
         )
-        channels = []
-        for channel in range(3):
-            value = np.asarray(
-                Image.fromarray(delta[:, :, channel]).resize(
-                    size, Image.Resampling.BILINEAR
-                )
-            ).copy()
-            current = (
-                np.zeros_like(value)
-                if correction is None
-                else np.asarray(
-                    Image.fromarray(correction[:, :, channel]).resize(
-                        size, Image.Resampling.BILINEAR
-                    )
-                ).copy()
-            )
-            for _ in range(70):
-                pad = np.pad(current, 1, mode="edge")
-                average = (
-                    pad[1:-1, :-2] + pad[1:-1, 2:] + pad[:-2, 1:-1] + pad[2:, 1:-1]
-                ) * 0.25
-                current = np.where(fixed, value, average)
-            channels.append(current)
-        correction = np.stack(channels, axis=2)
-    result = np.round(np.clip(bg + correction, 0, 255)).astype("uint8")
-    result[y : y + h, x : x + w][known] = np.asarray(source.convert("RGB"))[known]
-    return Image.fromarray(result).convert("RGBA")
+    ) > 0
+    card = np.asarray(source.getchannel("A")) > 4
+    source_gray = source.convert("L").filter(ImageFilter.GaussianBlur(0.6))
+    source_edges = np.asarray(source_gray.filter(ImageFilter.FIND_EDGES)) >= 32
+    source_edges &= card & (mask >= 128)
+    nearby = np.asarray(
+        Image.fromarray(source_edges.astype("uint8") * 255).filter(
+            ImageFilter.MaxFilter(neighborhood)
+        )
+    ) > 0
+    line_count = int(lines.sum())
+    registration = {
+        "line_pixels": line_count,
+        "line_coverage": round(coverage, 6),
+        "tolerance_pixels": tolerance,
+        "near_source_edges_fraction": round(
+            float((lines & nearby).sum()) / line_count, 6
+        ),
+        "outside_foreground_fraction": round(
+            float((lines & ~scope).sum()) / line_count, 6
+        ),
+        "outside_card_fraction": round(float((lines & ~card).sum()) / line_count, 6),
+    }
+    registration["warnings"] = []
+    if registration["near_source_edges_fraction"] < 0.35:
+        registration["warnings"].append("Low source-edge agreement; inspect placement visually")
+    if registration["outside_foreground_fraction"] > 0.03:
+        registration["warnings"].append("Some lines outside matte; inspect foreground scope visually")
+    if coverage < 0.001 or coverage > 0.30:
+        registration["warnings"].append("Unusual line density; inspect visual usefulness")
+    core, bloom = bloom_from_core(guide.convert("L"), source.width)
+    return core, bloom, registration
 
 
 def review_mask(args):
+    # Invalidate any previous pass before a new review, even if scoring fails.
+    write_json(args.report, {"mode": args.mode, "decision": "pending"})
     source = Image.open(args.source).convert("RGBA")
     mask_pixels(args.mask, source.size)
     record = {
+        "quality": quality_record(read_json(args.quality), ("foreground",), args.decision),
         "kind": "foreground-scope",
         "mode": args.mode,
         "decision": args.decision,
@@ -284,24 +218,42 @@ def build(args):
             "schema": 2,
             "mode": args.mode,
             "canvas": list(source.size),
+            "source_input_sha256": digest(args.source),
             "temporary_files": [],
             "format": {"status": "pass"},
             "geometry": {"status": "pass"},
             "visual": {"status": "pending"},
         }
         if args.mode != "low":
-            if not args.mask or not args.mask_review:
-                raise ValueError(
-                    "height/medium require a source-bound reviewed foreground mask"
+            lineart = getattr(args, "lineart", None)
+            if not lineart:
+                raise ValueError("A generated sketch is required; no automatic edge extraction")
+            if args.mask and args.mask_review:
+                mask = mask_pixels(args.mask, source.size)
+                verify_binding(
+                    read_json(args.mask_review), args.mode, [args.source, args.mask]
                 )
-            mask = mask_pixels(args.mask, source.size)
-            verify_binding(
-                read_json(args.mask_review), args.mode, [args.source, args.mask]
+                manifest["foreground_review"] = read_json(args.mask_review)
+                inputs += [args.mask, args.mask_review]
+                shutil.copy2(args.mask, stage / "owner-mask.png")
+            elif (
+                args.mode == "medium"
+                and lineart
+                and not args.mask
+                and not args.mask_review
+            ):
+                mask = np.full((source.height, source.width), 255, dtype="uint8")
+            else:
+                raise ValueError(
+                    "height needs a reviewed AI foreground mask; medium needs generated lineart"
+                )
+            contour, bloom, registration = guided_maps(
+                source, np.minimum(mask, alpha), lineart
             )
-            manifest["foreground_review"] = read_json(args.mask_review)
-            inputs += [args.mask, args.mask_review]
-            shutil.copy2(args.mask, stage / "owner-mask.png")
-            contour, bloom = maps(source, np.minimum(mask, alpha))
+            shutil.copy2(lineart, stage / "lineart-guide.png")
+            inputs.append(lineart)
+            manifest["contour_source"] = "generated-sketch-v2"
+            manifest["lineart_registration"] = registration
             contour.save(stage / "foreground_contour.png")
             bloom.save(stage / "foreground_bloom.png")
             overlay = source.copy()
@@ -324,12 +276,9 @@ def build(args):
                     raise ValueError(
                         f"Extended background must be opaque and exactly {size}; do not stretch it silently"
                     )
-                known = (mask == 0) & (alpha > 0)
-                repaired = match_background_boundary(bg_image, source, known, (px, py))
-                repaired.save(stage / "background.png")
-                manifest["background_repair"] = (
-                    "harmonic-color-match-v1; known pixels restored exactly"
-                )
+                bg_image.save(stage / "background.png")
+                manifest["background_composite"] = "generated-background-v3"
+                manifest["background_generation_input"] = str(args.background.resolve())
                 fg = pixels.copy()
                 fg[:, :, 3] = np.round(mask.astype(float) * alpha / 255).astype("uint8")
                 Image.fromarray(fg).save(stage / "foreground.png")
@@ -405,11 +354,23 @@ def check(bundle, mode, require_visual=True):
             raise ValueError("Canvas mismatch: " + name)
     if mode != "low":
         upstream = m.get("foreground_review")
-        if not upstream:
+        if upstream:
+            verify_binding(upstream, mode, list(upstream["inputs"]))
+            mask = mask_pixels(bundle / "owner-mask.png", source.size)
+        elif mode == "medium" and m.get("contour_source") == "generated-sketch-v2":
+            mask = np.full((source.height, source.width), 255, dtype="uint8")
+        else:
             raise ValueError("Missing upstream foreground review")
-        verify_binding(upstream, mode, list(upstream["inputs"]))
-        mask = mask_pixels(bundle / "owner-mask.png", source.size)
-        expected_core, expected_bloom = maps(source, np.minimum(mask, src[:, :, 3]))
+        if m.get("contour_source") == "generated-sketch-v2":
+            if m.get("lineart_refusal") or m.get("lineart_refusal_input"):
+                raise ValueError("Generated sketch cannot also claim edge fallback")
+            expected_core, expected_bloom, registration = guided_maps(
+                source, np.minimum(mask, src[:, :, 3]), bundle / "lineart-guide.png"
+            )
+            if registration != m.get("lineart_registration"):
+                raise ValueError("Generated sketch registration report changed")
+        else:
+            raise ValueError("Unknown contour source")
         for name, expected in [
             ("foreground_contour.png", expected_core),
             ("foreground_bloom.png", expected_bloom),
@@ -445,7 +406,7 @@ def check(bundle, mode, require_visual=True):
                                 checkerboard = True
                                 break
                 raise ValueError(
-                    "Contour/bloom differs from original-image extraction: "
+                    "Contour/bloom differs from bound generated sketch: "
                     + name
                     + f"; line_spill_pixels={spill}; bright_matte={bright_matte}; checkerboard_pattern={checkerboard}"
                 )
@@ -474,11 +435,13 @@ def check(bundle, mode, require_visual=True):
                 raise ValueError(
                     "Normalized background mapping disagrees with pixel rectangle"
                 )
-            known = (mask == 0) & (src[:, :, 3] > 0)
-            if not np.array_equal(
-                bg[y : y + h, x : x + w, :3][known], src[:, :, :3][known]
-            ):
-                raise ValueError("Known background colors changed")
+            generated_path = m.get("background_generation_input")
+            if (m.get("background_composite") != "generated-background-v3"
+                    or generated_path not in m["inputs"]):
+                raise ValueError("Missing bound AI background input")
+            generated = np.asarray(Image.open(generated_path).convert("RGBA"))
+            if not np.array_equal(bg, generated):
+                raise ValueError("Generated background pixels were modified")
             fg = np.asarray(Image.open(bundle / "foreground.png").convert("RGBA"))
             if not np.array_equal(fg[:, :, :3], src[:, :, :3]) or not np.array_equal(
                 fg[:, :, 3],
@@ -489,6 +452,7 @@ def check(bundle, mode, require_visual=True):
         raise ValueError("Failed upstream format/geometry stage")
     if require_visual:
         v = m["visual"]
+        verify_quality(v.get("quality"), REQUIRED[mode])
         if (
             v.get("status") != "pass"
             or v.get("files") != m["files"]
@@ -512,8 +476,14 @@ def check(bundle, mode, require_visual=True):
 def review(args):
     check(args.bundle, args.mode, require_visual=False)
     m = read_json(args.bundle / "manifest.json")
+    m["visual"] = {"status": "pending"}
+    write_json(args.bundle / "manifest.json", m)
+    status = args.bundle.parent / "status.json"
+    if args.bundle.name == "candidate" and status.exists():
+        write_json(status, {"mode": args.mode, "status": "reviewing", "accepted": False})
     m["visual"] = {
         "status": args.decision,
+        "quality": quality_record(read_json(args.quality), REQUIRED[args.mode], args.decision),
         "files": m["files"],
         "support": m["support"],
         "evidence": bind(args.evidence),
@@ -561,7 +531,7 @@ def main():
         if action == "build":
             q.add_argument("--source", required=True, type=Path)
             q.add_argument("--output", required=True, type=Path)
-            for key in ("mask", "mask-review", "background"):
+            for key in ("mask", "mask-review", "background", "lineart"):
                 q.add_argument("--" + key, type=Path)
         elif action == "review-mask":
             for key in ("source", "mask", "report"):
@@ -569,6 +539,7 @@ def main():
         else:
             q.add_argument("--bundle", type=Path, required=True)
         if action in ("review", "review-mask"):
+            q.add_argument("--quality", type=Path, required=True)
             q.add_argument("--decision", choices=("pass", "fail"), required=True)
             q.add_argument("--evidence", type=Path, nargs="+", required=True)
             q.add_argument("--notes", required=True)

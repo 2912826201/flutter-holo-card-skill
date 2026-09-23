@@ -7,3 +7,6 @@ __pycache__/
 .venv/
 build/
 coverage/
+
+# Local skill evaluations (user artwork and generated assets)
+.local-tests/

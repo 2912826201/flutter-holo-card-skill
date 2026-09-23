@@ -12,6 +12,9 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/build-flutter-holo-card/scripts"))
 import asset_pipeline as pipeline
+import prepare_foreground
+import prepare_generated_lineart
+from quality_review import PROFILES, REQUIRED, record
 
 
 class PipelineTests(unittest.TestCase):
@@ -23,6 +26,8 @@ class PipelineTests(unittest.TestCase):
         self.mask = self.root / "mask.png"
         self.bg = self.root / "generated.png"
         self.review = self.root / "review.json"
+        self.guide = self.root / "generated-lineart.png"
+        self.quality = self.root / "quality.json"
         source = Image.new("RGBA", (100, 140), (20, 60, 100, 0))
         d = ImageDraw.Draw(source)
         d.rounded_rectangle((0, 0, 99, 139), radius=8, fill=(20, 60, 100, 255))
@@ -35,6 +40,7 @@ class PipelineTests(unittest.TestCase):
         Image.new("RGBA", (116, 164), (35, 75, 115, 255)).save(self.bg)
 
     def prepare(self, mode="height"):
+        self.write_guide()
         pipeline.write_json(
             self.review,
             {
@@ -43,6 +49,7 @@ class PipelineTests(unittest.TestCase):
                 "inputs": pipeline.bind([self.source, self.mask]),
                 "evidence": pipeline.bind([self.mask]),
                 "notes": "Synthetic owner rectangle matched against fixture coordinates.",
+                "quality": record(self.cards(("foreground",)), ("foreground",), "pass"),
             },
         )
         a = argparse.Namespace(
@@ -51,17 +58,30 @@ class PipelineTests(unittest.TestCase):
             mask=self.mask,
             mask_review=self.review,
             background=self.bg,
+            lineart=self.guide,
             output=self.root / mode,
         )
         pipeline.build(a)
         return a, a.output / "candidate"
 
+    def write_guide(self):
+        guide = Image.new("L", (100, 140), 0)
+        ImageDraw.Draw(guide).line((35, 45, 65, 95), fill=255, width=3)
+        guide.save(self.guide)
+
+    def cards(self, required):
+        return {kind: {"scores": {key: 90 for key in PROFILES[kind][1]},
+                       "blockers": [], "notes": "Synthetic fixture observation.", "attempts": 1}
+                for kind in required}
+
     def accept(self, bundle, mode="height"):
+        pipeline.write_json(self.quality, self.cards(REQUIRED[mode]))
         pipeline.review(
             argparse.Namespace(
                 bundle=bundle,
                 mode=mode,
                 decision="pass",
+                quality=self.quality,
                 evidence=[self.source],
                 notes="Synthetic fixture has exact registration and expected background colors.",
             )
@@ -93,19 +113,140 @@ class PipelineTests(unittest.TestCase):
         pipeline.build(a)
         self.assertTrue((a.output / "candidate/source.png").exists())
 
-    def test_known_background_restored_and_foreground_rgb_preserved(self):
+    def test_generated_medium_lineart_needs_no_foreground_mask(self):
+        generated = self.root / "ai-lineart.png"
+        raw = Image.new("RGB", (100, 140), "black")
+        ImageDraw.Draw(raw).line((35, 45, 65, 95), fill="white", width=3)
+        raw.save(generated)
+        guide = self.root / "lineart-guide.png"
+        prep = prepare_generated_lineart.run(
+            argparse.Namespace(
+                mode="medium",
+                source=self.source,
+                generated=generated,
+                output=guide,
+            )
+        )
+        self.assertGreater(prep["line_coverage"], 0)
+        args = argparse.Namespace(
+            mode="medium",
+            source=self.source,
+            mask=None,
+            mask_review=None,
+            background=None,
+            lineart=guide,
+            output=self.root / "generated-medium",
+        )
+        pipeline.build(args)
+        bundle = args.output / "candidate"
+        manifest = pipeline.read_json(bundle / "manifest.json")
+        self.assertEqual(manifest["contour_source"], "generated-sketch-v2")
+        self.assertFalse((bundle / "owner-mask.png").exists())
+        actual = np.asarray(Image.open(bundle / "foreground_contour.png").convert("RGBA"))[:, :, 0]
+        expected = np.asarray(Image.open(guide).convert("L"))
+        self.assertTrue(np.array_equal(actual, expected))
+        self.assertIn("near_source_edges_fraction", manifest["lineart_registration"])
+        self.accept(bundle, "medium")
+        self.assertTrue(pipeline.check(bundle, "medium")["accepted"])
+        changed = Image.open(guide).convert("L")
+        changed.putpixel((1, 1), 255)
+        changed.save(guide)
+        with self.assertRaisesRegex(ValueError, "Stale input"):
+            pipeline.check(bundle, "medium")
+
+    def test_ai_cutout_controls_height_alpha_without_repainting_rgb(self):
+        generated = self.root / "ai-foreground.png"
+        cutout = Image.new("RGBA", (100, 140), (255, 255, 0, 0))
+        ImageDraw.Draw(cutout).rectangle((25, 30, 75, 110), fill=(0, 255, 0, 255))
+        cutout.save(generated)
+        overlay = self.root / "mask-overlay.png"
+        prepare_foreground.run(
+            argparse.Namespace(
+                mode="height",
+                source=self.source,
+                generated=generated,
+                mask=self.mask,
+                overlay=overlay,
+            )
+        )
+        pipeline.write_json(
+            self.review,
+            {
+                "mode": "height",
+                "decision": "pass",
+                "inputs": pipeline.bind([self.source, self.mask]),
+                "evidence": pipeline.bind([overlay, generated]),
+                "notes": "Synthetic transparent cutout aligns with the colored source rectangle.",
+                "quality": record(self.cards(("foreground",)), ("foreground",), "pass"),
+            },
+        )
+        self.write_guide()
+        args = argparse.Namespace(
+            mode="height",
+            source=self.source,
+            mask=self.mask,
+            mask_review=self.review,
+            background=self.bg,
+            lineart=self.guide,
+            output=self.root / "generated-height",
+        )
+        pipeline.build(args)
+        original = np.asarray(Image.open(self.source).convert("RGBA"))
+        foreground = np.asarray(Image.open(args.output / "candidate/foreground.png").convert("RGBA"))
+        self.assertTrue(np.array_equal(original[:, :, :3], foreground[:, :, :3]))
+        self.assertEqual(foreground[60, 50, :3].tolist(), [220, 80, 100])
+
+    def test_sketch_registration_warning_defers_to_visual_review_without_snapping(self):
+        guide = self.root / "misregistered-sketch.png"
+        off = Image.new("L", (100, 140), 0)
+        ImageDraw.Draw(off).line((55, 45, 85, 95), fill=255, width=3)
+        off.save(guide)
+        args = argparse.Namespace(
+            mode="medium",
+            source=self.source,
+            mask=None,
+            mask_review=None,
+            background=None,
+            lineart=guide,
+            output=self.root / "misregistered",
+        )
+        pipeline.build(args)
+        bundle = args.output / "candidate"
+        manifest = pipeline.read_json(bundle / "manifest.json")
+        self.assertTrue(manifest["lineart_registration"]["warnings"])
+        self.assertEqual(Image.open(bundle / "foreground_contour.png").convert("L").tobytes(), off.tobytes())
+        with self.assertRaises(ValueError):
+            pipeline.check(bundle, "medium")  # Warning neither accepts nor rejects visual quality.
+        self.accept(bundle, "medium")
+        self.assertTrue(pipeline.check(bundle, "medium")["accepted"])
+
+    def test_missing_sketch_never_triggers_edge_extraction_even_with_refusal(self):
+        args, bundle = self.prepare("medium")
+        args.lineart = None
+        args.lineart_refusal = self.root / "old-refusal.json"
+        pipeline.write_json(args.lineart_refusal, {"status": "refused"})
+        with self.assertRaisesRegex(ValueError, "no automatic edge extraction"):
+            pipeline.build(args)
+        self.assertFalse(bundle.exists())
+
+    def test_generated_background_used_whole_and_foreground_rgb_preserved(self):
         _, b = self.prepare()
         source = np.asarray(Image.open(self.source))
         bg = np.asarray(Image.open(b / "background.png"))
         fg = np.asarray(Image.open(b / "foreground.png"))
         self.assertTrue(np.array_equal(source[:, :, :3], fg[:, :, :3]))
-        self.assertEqual(bg[22, 18, :3].tolist(), [20, 60, 100])
-        self.assertLess(np.max(np.abs(bg[62, 58, :3].astype(int) - [20, 60, 100])), 3)
+        self.assertEqual(bg[22, 18, :3].tolist(), [35, 75, 115])
+        # The hidden region must be the model's pixels, never a scripted repaint.
+        self.assertEqual(bg[62, 58, :3].tolist(), [35, 75, 115])
+        self.assertEqual(
+            pipeline.read_json(b / "manifest.json")["background_composite"],
+            "generated-background-v3",
+        )
 
-    def test_gray_mask_rejected_and_failed_retry_retires_old_candidate(self):
+    def test_empty_mask_rejected_and_failed_retry_retires_old_candidate(self):
         a, b = self.prepare()
         self.accept(b)
-        Image.new("L", (100, 140), 128).save(self.mask)
+        Image.new("L", (100, 140), 0).save(self.mask)
         with self.assertRaises(ValueError):
             pipeline.build(a)
         self.assertFalse(b.exists())
@@ -146,7 +287,7 @@ class PipelineTests(unittest.TestCase):
     def test_shifted_lineart_rejected_even_with_updated_hash(self):
         _, b = self.prepare()
         self.mutate(b, "foreground_contour.png", lambda im: im.paste(im, (2, 0)))
-        with self.assertRaisesRegex(ValueError, "extraction"):
+        with self.assertRaisesRegex(ValueError, "bound generated sketch"):
             pipeline.check(b, "height", False)
 
     def test_checkerboard_and_spill_are_not_accepted_as_contour(self):
@@ -178,7 +319,16 @@ class PipelineTests(unittest.TestCase):
         self.mutate(
             b, "background.png", lambda im: im.putpixel((18, 22), (1, 2, 3, 255))
         )
-        with self.assertRaisesRegex(ValueError, "background colors"):
+        with self.assertRaisesRegex(ValueError, "background pixels"):
+            pipeline.check(b, "height", False)
+
+    def test_generated_background_cannot_be_script_repainted(self):
+        _, b = self.prepare()
+        # A hidden pixel must remain exactly as imagegen supplied it.
+        self.mutate(
+            b, "background.png", lambda im: im.putpixel((58, 62), (1, 2, 3, 255))
+        )
+        with self.assertRaisesRegex(ValueError, "background pixels"):
             pipeline.check(b, "height", False)
 
     def test_visual_evidence_stale_or_failed_never_passes(self):
@@ -195,6 +345,30 @@ class PipelineTests(unittest.TestCase):
         pipeline.write_json(b / "manifest.json", m)
         with self.assertRaises(ValueError):
             pipeline.check(b, "height")
+
+    def test_failed_scorecard_cannot_leave_a_previous_visual_pass(self):
+        _, bundle = self.prepare("medium")
+        self.accept(bundle, "medium")
+        cards = self.cards(REQUIRED["medium"])
+        cards["lineart"]["scores"]["placement"] = 0
+        pipeline.write_json(self.quality, cards)
+        with self.assertRaisesRegex(ValueError, "Below-threshold"):
+            pipeline.review(argparse.Namespace(bundle=bundle, mode="medium", decision="pass",
+                quality=self.quality, evidence=[self.source], notes="New review found displacement."))
+        with self.assertRaises(ValueError):
+            pipeline.check(bundle, "medium")
+        self.assertFalse(pipeline.read_json(bundle.parent / "status.json")["accepted"])
+
+    def test_failed_mask_scorecard_cannot_leave_a_previous_pass(self):
+        self.prepare()
+        pipeline.write_json(self.quality, {"foreground": {
+            "scores": {key: 60 for key in PROFILES["foreground"][1]},
+            "blockers": [], "notes": "Major parts missing.", "attempts": 2}})
+        with self.assertRaises(ValueError):
+            pipeline.review_mask(argparse.Namespace(mode="height", source=self.source,
+                mask=self.mask, report=self.review, quality=self.quality, decision="pass",
+                evidence=[self.mask], notes="Actual failed review."))
+        self.assertEqual(pipeline.read_json(self.review)["decision"], "pending")
 
     def test_cleanup_only_registered_temporary_files_preserves_evidence(self):
         _, b = self.prepare()

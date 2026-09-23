@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from asset_pipeline import check, read_json, write_json, digest, RUNTIME
+from quality_review import REQUIRED, verify as verify_quality
 
 
 def export(bundle, mode, output):
@@ -83,6 +84,7 @@ def verify_export(output, mode):
         or manifest["visual"]["files"] != manifest["files"]
     ):
         raise ValueError("Failed or stale export review")
+    verify_quality(manifest["visual"].get("quality"), REQUIRED[mode])
     files = {
         **manifest["files"],
         **manifest["visual"]["evidence"],
