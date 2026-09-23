@@ -746,10 +746,16 @@ class _HolographicCardState extends State<HolographicCard>
     _Resources resources,
     Offset shaderView,
   ) {
-    final activation = (widget.controlledActivation ?? _effectActivation).clamp(
-      0.0,
-      1.0,
-    );
+    // An autoplay presentation is active even without hover/touch. Keep the
+    // full material while interaction takes over; explicit activation wins.
+    final presenting =
+        widget.autoPlay &&
+        !_reduceMotion &&
+        _foreground &&
+        TickerMode.valuesOf(context).enabled;
+    final activation =
+        (widget.controlledActivation ?? (presenting ? 1.0 : _effectActivation))
+            .clamp(0.0, 1.0);
     return HolographicCardPainter(
       shader: resources.shader,
       images: resources.images,

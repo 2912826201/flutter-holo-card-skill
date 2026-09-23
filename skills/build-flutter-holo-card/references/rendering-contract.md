@@ -31,7 +31,11 @@ HolographicCard.height(
 
 ## 空间与材质
 
-pose/controlledTilt 的 x 向右、y 向上，范围 [-1,1]。controlledActivation 为 0–1；idleEffectStrength 默认 .22，effectStrength 默认 .65（1 为参考实现全强度）。关闭全部光效设 effectStrength=0。foilStrength 默认 1，设为 0 只关闭镭射材质，可独立检查轮廓反射；contourGlowStrength 默认 .55，设为 0 只关闭轮廓。autoPlay 默认为 false；开启后按 8 秒周期轻微展示，触摸/悬停优先。physical tilt 与 viewSensitivity 独立；后者只改变材质角度响应。
+共享 `foil_material.glsl` 保留参考 Full Art 的双向彩虹、原始箔纹、眩光及混合公式；`test/fixtures/reference_foil.frag` 是未改写的参考 Shader。三档必须保留该基础材质，新增轮廓和背景景深不能替换它。不要仅凭静态截图中的规则纹理就认定为摩尔纹并压灰、模糊或放大平铺尺寸。材质修改应在相同原图、箔纹、指针和激活量下对照参考；三档关闭新增效果后应通过参考渲染回归。真实显示问题需用目标尺寸的动态对照确认，不能以牺牲原有视觉效果作为默认修复。
+
+与原组件默认 `intensity=.8` 对照时设 `effectStrength=.8`、`foilStrength=1`、`controlledActivation=1`；先关闭物理倾斜以单独比较材质。参考组件指针 y 向下，本组件 pose y 向上，对照时映射为 `uPointer=(.5+.5*x, .5-.5*y)`。Demo 默认也采用 .8 / 1，切档保持共用参数。
+
+pose/controlledTilt 的 x 向右、y 向上，范围 [-1,1]。controlledActivation 为 0–1；idleEffectStrength 默认 .22，effectStrength 默认 .65（1 为参考实现全强度）。关闭全部光效设 effectStrength=0。foilStrength 默认 1，设为 0 只关闭镭射材质，可独立检查轮廓反射；contourGlowStrength 默认 .55，设为 0 只关闭轮廓。autoPlay 默认为 false；开启后按 8 秒周期轻微展示，触摸/悬停优先；展示时使用完整激活量，不能套用闲置衰减。显式 controlledActivation 优先；关闭展示且无交互时才衰减到闲置强度。physical tilt 与 viewSensitivity 独立；后者只改变材质角度响应。
 
 相机焦距为卡宽两倍，背景距离 `d=.04*min(卡宽,卡高)*depth`。逆整卡旋转得到局部相机 C；卡面点 P 的后平面交点为 `Q=P+d/Cz*(P-Cxy)`，除以中立尺度 `(1+d/f)` 恢复中立坐标，然后映射到背景 source rect。共享静态源 Alpha 裁剪全部输出；没有扩大的出框绘制区。depth=0 时内部投影恒等。
 

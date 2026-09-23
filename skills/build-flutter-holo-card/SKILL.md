@@ -15,6 +15,8 @@ description: Build Flutter holographic cards from artwork using image-generated 
 
 ## 默认执行规则
 
+- **保留参考镭射**：三档共用原有 Full Art 双层彩虹箔纹和眩光；medium 叠加轮廓，height 再叠加背景景深。集成或制作 Demo 不擅自弱化、模糊或替换参考材质；渲染验证见[渲染与集成](references/rendering-contract.md)。
+
 - **生图负责内容**：直接用当前环境可用、支持参考图的生图/编辑能力完成前景分离、背景补全和素描。工具名、模型名、厂商、API、安装路径均不固定；不要要求某个专属宿主或插件。只读取所选档位的 [height](references/height.md)、[medium](references/medium.md) 或 [low](references/low.md)。
 - **不要自行切换到图像算法制作素材**：不手工裁图、抠图、画多边形遮罩、程序描线、调用分割模型、自动扩张遮罩、吸附边缘、修补纹理或拼接背景。可用脚本仅做整画布尺寸适配、读取已有 Alpha、保留原图 RGB、素描明暗格式转换、bloom、预览与打包。成功的生图结果直接使用。
 - **先生成，再做轻量验收**：height 的三个请求可各自直接引用原图，不必先做蒙版和背景指引；工具支持并发时可以并发。前景保留整块文字/面板区域，不追逐每个字孔和发丝。素描从首轮就用“以素描风格绘画卡片除背景外的元素”的创作描述，具体模板见[资源流程](references/resource-workflow.md)。

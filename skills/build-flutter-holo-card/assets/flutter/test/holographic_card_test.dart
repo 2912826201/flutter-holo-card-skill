@@ -11,6 +11,8 @@ MemoryImage asset(String name) =>
 HolographicCard card(
   String mode, {
   double power = 1,
+  double? activation,
+  double contour = .55,
   Offset? pose,
   bool physical = true,
   double depth = 1,
@@ -25,6 +27,7 @@ HolographicCard card(
       foilImage: foil,
       shaderAssetPath: 'shaders/low.frag',
       effectStrength: power,
+      controlledActivation: activation,
       controlledTilt: pose,
       applyPhysicalTilt: physical,
       onError: onError,
@@ -33,10 +36,12 @@ HolographicCard card(
     return HolographicCard.medium(
       cardImage: image,
       foilImage: foil,
+      contourGlowStrength: contour,
       foregroundContourImage: asset('contour'),
       foregroundBloomImage: asset('bloom'),
       shaderAssetPath: 'shaders/medium.frag',
       effectStrength: power,
+      controlledActivation: activation,
       controlledTilt: pose,
       applyPhysicalTilt: physical,
       onError: onError,
@@ -44,6 +49,7 @@ HolographicCard card(
   return HolographicCard.height(
     cardImage: image,
     foilImage: foil,
+    contourGlowStrength: contour,
     foregroundContourImage: asset('contour'),
     foregroundBloomImage: asset('bloom'),
     backgroundImage: asset('background'),
@@ -57,6 +63,7 @@ HolographicCard card(
     shaderAssetPath: 'shaders/holographic_card.frag',
     depth: depth,
     effectStrength: power,
+    controlledActivation: activation,
     controlledTilt: pose,
     applyPhysicalTilt: physical,
     onError: onError,
@@ -259,36 +266,52 @@ void main() {
       },
     );
   }
-  testWidgets(
-    'low matches unmodified reference shader at equal pose and power',
-    (tester) async {
-      for (final pose in [
-        Offset.zero,
-        const Offset(-1, 1),
-        const Offset(1, -1),
-      ]) {
-        await mount(tester, card('low', pose: pose, physical: false));
-        await ready(tester);
-        final actual = (await tester.runAsync(() => pixels(tester, renderer)))!;
-        await mount(
-          tester,
-          HolographicCard.low(
-            cardImage: asset('source'),
-            foilImage: asset('foil'),
-            shaderAssetPath: 'test/fixtures/reference_foil.frag',
-            effectStrength: 1,
-            controlledTilt: pose,
-            applyPhysicalTilt: false,
-          ),
-        );
-        await ready(tester);
-        final reference = (await tester.runAsync(
-          () => pixels(tester, renderer),
-        ))!;
-        expect(actual, reference);
-      }
-    },
-  );
+  for (final mode in ['low', 'medium', 'height']) {
+    testWidgets(
+      '$mode retains reference foil when additional effects are disabled',
+      (tester) async {
+        for (final pose in [
+          Offset.zero,
+          const Offset(-1, 1),
+          const Offset(1, -1),
+        ]) {
+          await mount(
+            tester,
+            card(
+              mode,
+              power: .8,
+              activation: 1,
+              contour: 0,
+              depth: 0,
+              pose: pose,
+              physical: false,
+            ),
+          );
+          await ready(tester);
+          final actual = (await tester.runAsync(
+            () => pixels(tester, renderer),
+          ))!;
+          await mount(
+            tester,
+            HolographicCard.low(
+              cardImage: asset('source'),
+              foilImage: asset('foil'),
+              shaderAssetPath: 'test/fixtures/reference_foil.frag',
+              effectStrength: .8,
+              controlledActivation: 1,
+              controlledTilt: pose,
+              applyPhysicalTilt: false,
+            ),
+          );
+          await ready(tester);
+          final reference = (await tester.runAsync(
+            () => pixels(tester, renderer),
+          ))!;
+          expect(actual, reference);
+        }
+      },
+    );
+  }
   testWidgets(
     'height foreground and Alpha stay anchored through all depth/pose extremes',
     (tester) async {
@@ -358,6 +381,39 @@ void main() {
     expect((painter(tester).view - automaticPose).distance, lessThan(1e-6));
     await touch.up();
     await tester.pump(const Duration(milliseconds: 300));
+    await mount(tester, const SizedBox());
+  });
+  testWidgets('autoplay keeps foil active and honors explicit activation', (
+    tester,
+  ) async {
+    HolographicCard sample({bool auto = true, double? activation}) =>
+        HolographicCard.low(
+          cardImage: asset('source'),
+          foilImage: asset('foil'),
+          shaderAssetPath: 'shaders/low.frag',
+          effectStrength: .8,
+          autoPlay: auto,
+          controlledActivation: activation,
+        );
+    await mount(tester, sample());
+    await ready(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(painter(tester).view, isNot(Offset.zero));
+    expect(painter(tester).effectStrength, .8);
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(renderer));
+    await tester.pump();
+    expect(painter(tester).effectStrength, .8);
+    await mouse.removePointer();
+    await tester.pump(const Duration(seconds: 1));
+    await mount(tester, sample(activation: 0));
+    await ready(tester);
+    expect(painter(tester).effectStrength, closeTo(.8 * .22, 1e-9));
+    await mount(tester, sample(auto: false));
+    await ready(tester);
+    await tester.pumpAndSettle();
+    expect(painter(tester).effectStrength, closeTo(.8 * .22, 1e-9));
     await mount(tester, const SizedBox());
   });
   testWidgets('failed texture reports error and displays original', (
