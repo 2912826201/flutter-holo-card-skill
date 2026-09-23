@@ -7,5 +7,3 @@ __pycache__/
 .venv/
 build/
 coverage/
-examples/tianxiang_card/qa/v2/*/diagnostics/
-examples/akali_card/work/*/diagnostics/
