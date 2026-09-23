@@ -2,7 +2,7 @@
 
 让静态卡面拥有随视角流动的彩虹箔光、轮廓反射与立体景深。
 
-**[在线体验 Demo →](https://2912826201.github.io/flutter-holo-card-skill/)** · [Demo 源码](examples/holo_demo)
+**[在线体验 Demo →](https://2912826201.github.io/flutter-holo-card-skill/)** · [下载完整 Demo](https://github.com/2912826201/flutter-holo-card-skill/releases/download/demo-2026-09-23/holo-demo.zip) · [Demo 源码](examples/holo_demo)
 
 移动鼠标或拖动卡片，切换等级、调节光效。满意后，一键导出当前组件与资源，或下载完整 Demo。
 
