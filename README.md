@@ -1,58 +1,14 @@
 # Flutter Holo Card Skill
 
-把一张静态卡图变成可交互的 Flutter 全息卡。拖动或悬停时，彩虹箔纹与眩光会随视角流动；松手后卡片平滑回正。选择 `height`、`medium` 或 `low`，即可决定是否加入景深和前景轮廓反射。
+让静态卡面拥有随视角流动的彩虹箔光、轮廓反射与立体景深。
 
-## 三种效果
+**[在线体验 Demo →](https://2912826201.github.io/flutter-holo-card-skill/)** · [Demo 源码](examples/holo_demo)
 
-未指定等级时默认交付三档可切换、参数可调的 Flutter Web Demo。明确指定等级时只生成该档所需素材和效果：
+移动鼠标或拖动卡片，切换等级、调节光效。满意后，一键导出当前组件与资源，或下载完整 Demo。
 
-| `height` · 立体全息 | `medium` · 轮廓反射 | `low` · 纯镭射 |
+| height · 立体全息 | medium · 轮廓反射 | low · 纯镭射 |
 | :---: | :---: | :---: |
-| ![height：背景随视角移动，人物和卡框保持在卡面，前景轮廓反光](docs/previews/height.gif) | ![medium：完整原图不产生内部视差，前景轮廓随视角反光](docs/previews/medium.gif) | ![low：完整原图上的彩虹箔纹与眩光](docs/previews/low.gif) |
-| 前景固定、背景后退，轮廓随角度被照亮 | 卡图保持完整，只让前景线条反光 | 保留原图，只叠加彩虹箔纹与眩光 |
+| ![height 立体全息卡片动态效果](docs/previews/height.gif) | ![medium 轮廓反射卡片动态效果](docs/previews/medium.gif) | ![low 纯镭射卡片动态效果](docs/previews/low.gif) |
+| 前景保持在卡面，背景随视角产生景深，轮廓局部亮起。 | 卡面保持完整，反光沿人物、装备与卡框流动。 | 彩虹箔纹与眩光随角度变化，呈现镭射质感。 |
 
-### `height`：有景深的立体卡片
-
-人物、文字和边框保持在同一卡面，补全的背景位于后方。转动卡片时，背景产生透视视差，前景轮廓像反射光一样局部亮起。景深和背景移动强度均可调节。
-
-### `medium`：没有景深的轮廓反射
-
-完整原图始终保持原位。Skill 用生图制作只描绘前景的手绘素描，反光沿人物、装备和卡框随角度移动，背景不参与描线。适合想保留卡面原貌，同时增强细节的卡片。
-
-### `low`：简洁的镭射卡
-
-直接在完整原图上叠加彩虹箔纹与眩光，不制作分层或轮廓。适合只想要角度变色效果的卡片。
-
-## 功能
-
-- **原图优先**：保留卡面人物、文字与边框的颜色和位置；`height` 只补全背景中需要显露的区域。
-- **生图制作素材**：透明前景、补全背景与前景素描优先由生图完成；只做整画布适配和打包，不自动改用手工分离、裁切、程序描线或背景拼补。
-- **随手势响应**：支持鼠标悬停、触摸拖动、平滑回正，也支持由应用控制姿态；整卡倾斜和自动展示可单独开关。
-- **效果可调**：可分别调节镭射材质、轮廓反光和整体光效；`height` 还可调节景深与背景移动。
-- **一键导出**：调好等级与参数后，可下载当前组件及该档资源，或下载完整 Demo 和全部已请求资源。导出的参数成为默认值，完整 Demo 可继续调参和再次导出。
-- **按指令交付**：明确 medium 时只生成素描，low 不调用生图；`height assets-only` 只生成 height 素材，跳过组件与 Demo。
-
-## 生成速度与验收
-
-技能流程不绑定特定模型、厂商、API 或宿主；使用当前环境支持参考图的生图/编辑能力。height 默认三个独立生图请求，medium 一个，low 零个。每项最多首轮加一次针对性编辑，已达标素材直接复用；工具拒绝或预算耗尽就说明缺项并停止。
-
-按素材分别评分：前景 **85/100**、背景 **80/100**、前景素描 **75/100**，组合预览 **80/100**。允许少量发丝遗漏、素描简化、轻微局部偏差及合理的新背景纹理；文件完整性、透明度、可用画布和明显主体缺失仍检查。边缘命中率仅作为诊断，不能自动否决肉眼可用的结果。量表和证据格式见[质量评分](skills/build-flutter-holo-card/references/quality-policy.md)。
-
-素描首轮以“以素描风格绘画卡片除背景外的元素”为目标描述。前景文字按整块面板保留；背景直接使用完整生成结果，不做原图背景硬回填。assets-only 只做素材与叠加预览验收，不强制建立 Flutter Demo。
-
-## 使用
-
-将 [`build-flutter-holo-card`](skills/build-flutter-holo-card/SKILL.md) 安装到 Skills 目录，然后附上卡图并指定效果：
-
-```text
-使用 $build-flutter-holo-card，height，把这张卡集成到 Flutter 项目。
-使用 $build-flutter-holo-card，medium，保留原图并让前景轮廓随角度反光。
-使用 $build-flutter-holo-card，把这张卡做成可调参的三档 Demo。
-使用 $build-flutter-holo-card，height assets-only。
-使用 $build-flutter-holo-card，medium assets-only。
-使用 $build-flutter-holo-card，low assets-only。
-```
-
-未指定等级时默认三档 Demo，初始选中 `height`；指定等级时只制作该档。`assets-only` 可与任一档位组合，兼容旧写法 `asset-only`；单独使用时交付三档资源合集。生成与导出说明见 [Demo 流程](skills/build-flutter-holo-card/references/demo-export.md)。
-
-材质来源及许可见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+[使用 Skill](skills/build-flutter-holo-card/SKILL.md) · [素材与许可](THIRD_PARTY_NOTICES.md)

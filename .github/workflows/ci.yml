@@ -28,8 +28,8 @@ jobs:
       - run: flutter test
         working-directory: skills/build-flutter-holo-card/assets/flutter
       - run: flutter pub get
-        working-directory: examples/tianxiang_card
+        working-directory: examples/holo_demo
       - run: flutter analyze && flutter test
-        working-directory: examples/tianxiang_card
+        working-directory: examples/holo_demo
       - run: flutter build web --no-web-resources-cdn
-        working-directory: examples/tianxiang_card
+        working-directory: examples/holo_demo
