@@ -8,9 +8,9 @@
 
 ### height · 立体全息
 
-前景保持在卡面，背景随视角大幅移动，轮廓局部亮起。
+转动卡片时，前景贴合卡面，背景随视角大幅移动，轮廓局部亮起。
 
-![height 立体全息：固定前景与移动背景](docs/previews/height-hd.gif)
+![height 立体全息：卡片转动与背景景深](docs/previews/height-tilt-hd.gif)
 
 ### medium · 轮廓反射
 
