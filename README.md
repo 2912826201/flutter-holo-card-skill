@@ -2,9 +2,9 @@
 
 将静态卡图制作成随视角变化的 Flutter 全息卡。提供 `height`、`medium`、`low` 三档效果；Demo 可以调节参数，并导出当前组件或完整工程。
 
-[在线 Demo](https://2912826201.github.io/flutter-holo-card-skill/) · [下载完整 Demo](https://github.com/2912826201/flutter-holo-card-skill/releases/download/demo-2026-09-23/holo-demo.zip) · [查看 Demo 源码](examples/holo_demo)
+[查看 Demo 源码](examples/holo_demo)
 
-移动鼠标或拖动卡片可查看角度变化；也可以切换档位、调整光效。
+运行 Demo 后，移动鼠标或拖动卡片可查看角度变化；也可以切换档位、调整光效。
 
 ## 效果预览
 
