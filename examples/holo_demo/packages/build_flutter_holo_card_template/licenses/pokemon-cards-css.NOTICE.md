@@ -1,11 +1,7 @@
-# Material provenance
+# Foil material and texture
 
-The shared foil material and bundled `assets/holographic_foil.png` are copied/adapted from the user's chaoqushang Flutter project (rainbow_foil.frag, card/holographic_foil.png). Its shader carries SPDX-License-Identifier: GPL-3.0 and attributes the Full Art material to Simon Goellner (@simeydotme), pokemon-cards-css, copyright 2022.
+The foil shader adapts the Full Art effect from [Simon Goellner's pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css). The bundled `assets/holographic_foil.png` is byte-identical to that project's [`public/img/illusion.png`](https://github.com/simeydotme/pokemon-cards-css/blob/main/public/img/illusion.png). The upstream [README](https://github.com/simeydotme/pokemon-cards-css/blob/main/README.md) lists credits for some image assets.
 
-Upstream: https://github.com/simeydotme/pokemon-cards-css
-License: https://github.com/simeydotme/pokemon-cards-css/blob/main/LICENSE
-The full upstream license is included in pokemon-cards-css.GPL-3.0.txt.
+This Flutter package is distributed under GPL-3.0. A copy of the license is included in `pokemon-cards-css.GPL-3.0.txt` in this directory.
 
-The reusable Flutter rendering package is distributed under GPL-3.0 to retain the derived material's license; the repository's MIT license does not override it. The foil texture is bundled with the same source notice; this notice does not claim ownership of user-provided card art. Original card art remains subject to its respective rights.
-
-Changes: shared material function, three shader entry points, original-image contour emission and calibrated background-plane projection. The low shader retains the reference material equations.
+Changes in this package: a shared foil function, three shader entry points, contour reflection and background-plane projection. Card artwork supplied for individual cards is separate from this package.

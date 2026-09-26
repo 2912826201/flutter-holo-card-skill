@@ -1,7 +1,7 @@
-# 第三方来源与许可
+# 许可与第三方材料
 
-仓库脚本和文档使用根目录 MIT License。该声明不覆盖 `skills/build-flutter-holo-card/assets/flutter/`：这个 Flutter 包复用了用户提供的 chaoqushang 项目中的 GPL-3.0 镭射材质与箔纹，并按 GPL-3.0 分发。完整许可、原始署名和修改说明随包放在 `licenses/`，集成脚本会一起复制。
+仓库中的脚本和文档采用 [MIT 许可证](LICENSE)。Flutter 渲染包位于 `skills/build-flutter-holo-card/assets/flutter/`，按 GPL-3.0 分发。
 
-材质上游为 [Simon Goellner 的 pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css)，版权 2022；完整 [GPL-3.0 许可](https://github.com/simeydotme/pokemon-cards-css/blob/main/LICENSE) 已随包附带。low 保留参考材质公式，height 和 medium 叠加本项目的背景投影或轮廓合成。
+渲染包的 Full Art 箔光材质依据 [pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css) 改写。随包的 `holographic_foil.png` 与该项目的 [`public/img/illusion.png`](https://github.com/simeydotme/pokemon-cards-css/blob/main/public/img/illusion.png) 内容相同；[上游 README](https://github.com/simeydotme/pokemon-cards-css/blob/main/README.md) 另列有部分图片素材署名。包内 `licenses/` 保留了 [GPL-3.0 许可](https://github.com/simeydotme/pokemon-cards-css/blob/main/LICENSE)、项目来源和修改说明，集成或导出组件时会一并复制。
 
-早期交互思路参考了 MIT 项目 [LerSent001/holo-card](https://github.com/LerSent001/holo-card)。上游作者不为本项目背书。用户卡图和生成的美术素材保留各自权利；本仓库不授予第三方卡图使用权。Python、Pillow、NumPy、PyYAML、Flutter 及应用依赖分别遵守自己的许可证。
+示例卡图及用户自行提供的卡图由各自权利人管理。Flutter、Python 及其依赖分别遵循各自的许可证。

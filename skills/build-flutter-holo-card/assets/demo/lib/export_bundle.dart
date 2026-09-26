@@ -114,8 +114,8 @@ flutter:
 ''');
     addText('README.md', '''# 导出的全息卡组件
 
-当前等级：${settings.mode}。调好的参数已写入 SelectedHoloCard 构造默认值。
-将此目录放入应用的 packages/$packageName，在应用 pubspec.yaml 添加：
+当前档位：${settings.mode}。导出时的参数已写入 SelectedHoloCard 的构造默认值。
+将此目录放入应用的 packages/$packageName，并在应用的 pubspec.yaml 中添加：
 
 ```yaml
 dependencies:
@@ -123,16 +123,16 @@ dependencies:
     path: packages/$packageName
 ```
 
-执行 flutter pub get，然后使用：
+执行 `flutter pub get`，然后使用：
 
 ```dart
 import 'package:$packageName/selected_holo_card.dart';
 const SelectedHoloCard();
 ```
 
-用 SizedBox 或父布局限制卡片尺寸即可。参数可在构造函数中覆盖。
-保留 package 名称及目录中的 Shader、箔纹和许可证；素材对应原卡图。
-此包只注册当前等级所需的 Shader 和图片，不包含调参界面。
+用 SizedBox 或父布局设置卡片尺寸。构造函数中的参数可以覆盖默认值。
+图片资源位于 assets/card/；请保留包名、Shader、箔纹和许可证文件。
+此包只包含当前档位所需的 Shader 和图片，不含调参界面。
 ''');
   }
   addText(

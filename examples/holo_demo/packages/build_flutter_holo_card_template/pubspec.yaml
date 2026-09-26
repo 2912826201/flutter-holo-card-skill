@@ -1,5 +1,5 @@
 name: build_flutter_holo_card_template
-description: Validation package for the reusable Flutter holo-card templates.
+description: Flutter holographic card widget with three rendering modes.
 publish_to: none
 version: 0.1.0
 environment:

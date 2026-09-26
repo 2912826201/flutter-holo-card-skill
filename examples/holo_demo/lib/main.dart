@@ -256,7 +256,7 @@ class _PlaygroundState extends State<Playground> {
                           const Spacer(),
                           if (box.maxWidth > 500)
                             const Text(
-                              'INTERACTIVE CARD STUDY',
+                              'FLUTTER DEMO',
                               style: TextStyle(
                                 color: muted,
                                 fontSize: 10,
@@ -274,7 +274,7 @@ class _PlaygroundState extends State<Playground> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '光，随你而动。',
+                                  '调节光效与视角',
                                   style: TextStyle(
                                     fontSize: box.maxWidth < 440 ? 23 : 30,
                                     fontWeight: FontWeight.w600,
@@ -317,7 +317,7 @@ class _PlaygroundState extends State<Playground> {
                       ],
                       const SizedBox(height: 18),
                       const Text(
-                        '移动鼠标或拖动卡面 · 调好参数后即可导出',
+                        '移动鼠标或拖动卡面，调整参数后可导出',
                         style: TextStyle(color: muted, fontSize: 11),
                       ),
                     ],
@@ -510,7 +510,7 @@ class _PlaygroundState extends State<Playground> {
           ),
         ),
         Text(
-          exporting ? '正在打包…' : (exportStatus ?? '当前参数将成为导出默认值 · ZIP 下载'),
+          exporting ? '正在打包…' : (exportStatus ?? '导出后会下载 ZIP，当前参数将用作默认值'),
           style: const TextStyle(color: muted, fontSize: 10),
         ),
         divider(),
